@@ -134,6 +134,30 @@ Disclosed because you should know before installing:
 - touches nothing outside `$HERMES_HOME`;
 - Linux and macOS only (the store's lock uses `fcntl`).
 
+## How Hermes finds this plugin
+
+Nothing here has to be *searched for*, and that is deliberate:
+
+- **The tools are always listed.** They register in a `reminders` toolset, so Hermes includes
+  them by name in the Tool Search catalogue that ships in every session's context. A model that
+  sees the name skips straight to `tool_describe` → `tool_call`; it never needs `tool_search`.
+- **The skill is always listed too.** The plugin registers a read-only skill, `reminders:using`,
+  which appears in the session's skill catalogue with its description (Hermes' plugin-skill
+  registry — the same mechanism other plugins use). The body is read only when the detail is
+  wanted.
+
+Two things that are Hermes' policy rather than this plugin's choice, worth knowing:
+
+- **Schemas are fetched on demand.** Hermes progressively discloses plugin and MCP tool schemas
+  (Tool Search), so the first call to a reminder tool costs one `tool_describe` for the
+  parameters. There is no per-plugin opt-out; the only switch is the global
+  `tools.tool_search` setting (`defer: []` / `enabled: off`), which also makes cold built-ins
+  like `session_search` and `cronjob_manage` eager and pays their schema cost every turn.
+- **A plugin cannot force an agent to comply.** It can make the tool name, the description and
+  the instructions unmissable — which is what the descriptions and the bundled skill do. A
+  profile that wants the reminder route guaranteed regardless of the task adds one standing line
+  to its own `SOUL.md`.
+
 ## Development
 
 ```bash
