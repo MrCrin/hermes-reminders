@@ -2,14 +2,19 @@
 
 from __future__ import annotations
 
+from . import message
 from .store import ReminderStore, StoreError
 
 ADD_SCHEMA = {
     "name": "reminders_add",
     "description": (
         "Add a reminder to the pool. It is delivered to the user once, at the given time, by a "
-        "cron job that calls no model — so delivery costs nothing. Give an absolute ISO 8601 "
-        "time (2026-11-01T15:00Z) or a duration from now (2h, 90m, 1d). "
+        "cron job that calls no model — so delivery costs nothing and this is one call.\n"
+        "Write `text` as the sentence that will land, addressed to the reader in the second "
+        "person: \"Charge your phone\", not \"Charge my phone\". Do not add an emoji or a "
+        "timestamp — delivery adds those.\n"
+        "`when` is an absolute ISO 8601 time (2026-11-01T15:00Z) or a duration from now "
+        "(5m, 2h, 1d).\n"
         "Prefer this over a one-shot cron job: one-shot jobs that come due while the scheduler "
         "is down are retired rather than delivered, and N reminders would otherwise mean N jobs."
     ),
@@ -69,8 +74,9 @@ def _store() -> ReminderStore:
 
 
 def handle_add(args: dict, **kwargs) -> str:
+    store = _store()
     try:
-        record = _store().add(
+        record = store.add(
             str(args.get("text", "")),
             str(args.get("when", "")),
             created_by="agent",
@@ -78,7 +84,11 @@ def handle_add(args: dict, **kwargs) -> str:
         )
     except (StoreError, ValueError) as exc:
         return f"Could not add the reminder: {exc}"
-    return f"Reminder {record['id']} set for {record['due_at']} (UTC): {record['text']}"
+    preview = message.render(record, store.template())
+    return (
+        f"Reminder {record['id']} set for {record['due_at']} (UTC).\n"
+        f"It will arrive as:\n{preview}"
+    )
 
 
 def handle_list(args: dict, **kwargs) -> str:

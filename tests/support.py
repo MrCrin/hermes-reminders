@@ -33,6 +33,7 @@ sender = importlib.import_module("reminders.sender")
 poller = importlib.import_module("reminders.poller")
 cli = importlib.import_module("reminders.cli")
 tools = importlib.import_module("reminders.tools")
+message = importlib.import_module("reminders.message")
 
 FAKE_HERMES = """#!/usr/bin/env bash
 # Stand-in for the real `hermes` CLI: records how it was called, then succeeds or fails.

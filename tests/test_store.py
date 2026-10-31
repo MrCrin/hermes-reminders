@@ -122,6 +122,13 @@ class PoolTests(unittest.TestCase):
         self.store.set_default_target("telegram")
         self.assertEqual(self.store.default_target(), "telegram")
 
+    def test_template_round_trip(self):
+        self.assertIsNone(self.store.template())
+        self.store.set_template("🔔 {text}")
+        self.assertEqual(self.store.template(), "🔔 {text}")
+        self.store.set_template(None)
+        self.assertIsNone(self.store.template())
+
     def test_an_unreadable_store_says_so(self):
         self.store.path.parent.mkdir(parents=True, exist_ok=True)
         self.store.path.write_text("{not json")

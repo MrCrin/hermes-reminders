@@ -32,7 +32,9 @@ class PollerTests(unittest.TestCase):
         self.assertEqual((delivered, failed), (1, 0))
         self.assertEqual(self.store.all(), [])  # pruned
         self.assertEqual(stdout.getvalue(), "")  # silent tick
-        self.assertIn("send --to telegram --quiet check the database", self.env["log"].read_text())
+        log = self.env["log"].read_text()
+        self.assertIn("send --to telegram --quiet 🔔 check the database", log)
+        self.assertIn("(Reminder set on ", log)
 
     def test_nothing_due_is_silent_and_sends_nothing(self):
         self.store.add("tomorrow", "1d")

@@ -12,7 +12,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from . import sender
+from . import message, sender
 from .poller import run_once
 from .store import ReminderStore, StoreError, hermes_home
 
@@ -136,8 +136,11 @@ def handle_add(args) -> int:
     if not when:
         print("reminders: give a time — `--at 2026-11-01T15:00Z` or `--in 2h`", file=sys.stderr)
         return 2
-    record = ReminderStore().add(args.text, when, created_by="cli", target=args.target)
+    store = ReminderStore()
+    record = store.add(args.text, when, created_by="cli", target=args.target)
     print(f"{record['id']}  {record['due_at']}  {record['text']}")
+    print("will send:")
+    print(message.render(record, store.template()))
     return 0
 
 
@@ -173,6 +176,8 @@ def handle_setup(args) -> int:
     store = ReminderStore()
     if getattr(args, "target", None):
         store.set_default_target(args.target)
+    if getattr(args, "template", None):
+        store.set_template(args.template)
     print(f"store: {store.path}")
     print(f"stub:  {write_stub()}")
 
@@ -210,6 +215,7 @@ def handle_status(args) -> int:
     stub = stub_path()
     print(f"store:          {store.path}{'' if store.path.exists() else '  (not created yet)'}")
     print(f"default target: {store.default_target() or '— (set one with `hermes reminders setup --target <platform>`)'}")
+    print(f"template:       {store.template() or 'default (🔔 {text} / (Reminder set on {created}))'}")
     print(f"reminders:      {len(pending)} pending, {len(failed)} failed")
     print(f"stub:           {stub}{'' if stub.exists() else '  (missing — run `hermes reminders setup`)'}")
     print(f"cron job:       {job.get('id') if job else 'not installed'}")
@@ -222,7 +228,10 @@ def setup_parser(parser) -> None:
     sub = parser.add_subparsers(dest="reminders_command", metavar="<command>")
 
     add = sub.add_parser("add", help="Add a reminder to the pool")
-    add.add_argument("text", help="What to remind about — this is the message that gets sent")
+    add.add_argument(
+        "text",
+        help="The reminder, written as the sentence to deliver — addressed to the reader: 'Charge your phone'",
+    )
     add.add_argument("--at", help="ISO 8601 time (2026-11-01T15:00Z); a time with no offset is read as local")
     add.add_argument("--in", dest="in_", metavar="DURATION", help="Time from now: 2h, 90m, 1d")
     add.add_argument("--target", help="Delivery target (e.g. telegram); defaults to the pool default")
@@ -236,6 +245,11 @@ def setup_parser(parser) -> None:
 
     setup = sub.add_parser("setup", help="Install the poller stub and its cron job")
     setup.add_argument("--target", help="Set the default delivery target for the pool")
+    setup.add_argument(
+        "--template",
+        help="Set the delivery format, e.g. '🔔 {text}\\n(Reminder set on {created})'. "
+             "Placeholders: {text} {created} {created_utc} {due} {due_utc} {id}",
+    )
     setup.add_argument("--no-cron", action="store_true", help="Write the stub only; print the job command")
 
     sub.add_parser("poll", help="Deliver everything due, once")

@@ -11,9 +11,11 @@ dependency-free: the cron stub imports it from Hermes' own interpreter.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 
 def register(ctx) -> None:
-    """Register the reminder tools and the ``hermes reminders`` command."""
+    """Register the reminder tools, the CLI command and the usage skill."""
     from . import cli, tools as _t
 
     for name, schema, handler, emoji in (
@@ -33,6 +35,21 @@ def register(ctx) -> None:
             "One JSON store; one cron job delivers what is due without calling a model."
         ),
     )
+
+    # The skill is how an agent finds the tools instead of rediscovering the system: without
+    # it, a model asked to "remind me in 5 minutes" goes looking through memory, the filesystem
+    # and the CLI, and sets the reminder by shelling out.
+    skill = Path(__file__).resolve().parent / "SKILL.md"
+    if skill.is_file():
+        ctx.register_skill(
+            "using",
+            skill,
+            description=(
+                "Use when the user asks to be reminded of something at a time, or asks what "
+                "reminders are set — set one with the reminders_add tool rather than hunting "
+                "for the store or the CLI."
+            ),
+        )
 
 
 __all__ = ["register"]

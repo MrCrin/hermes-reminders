@@ -39,6 +39,8 @@ class CliTests(unittest.TestCase):
         code, out, _ = self.run_cli(["add", "ring the dentist", "--in", "2h", "--target", "telegram"])
         self.assertEqual(code, 0)
         reminder_id = out.split()[0]
+        self.assertIn("will send:", out)
+        self.assertIn("🔔 ring the dentist", out)
 
         code, out, _ = self.run_cli(["list"])
         self.assertEqual(code, 0)
@@ -98,12 +100,20 @@ class CliTests(unittest.TestCase):
         self.assertIn(cli.cron_command(), out)
         self.assertFalse(self.env["log"].exists())
 
+    def test_setup_stores_a_custom_template(self):
+        code, _, _ = self.run_cli(["setup", "--no-cron", "--template", "🔔 {text}"])
+        self.assertEqual(code, 0)
+        self.assertEqual(self.store.template(), "🔔 {text}")
+        _, out, _ = self.run_cli(["status"])
+        self.assertIn("🔔 {text}", out)
+
     def test_status_reports_the_whole_chain(self):
         self.run_cli(["setup", "--no-cron"])
         self.run_cli(["add", "something", "--in", "1h"])
         code, out, _ = self.run_cli(["status"])
         self.assertEqual(code, 0)
-        for needle in ("store:", "default target:", "reminders:      1 pending", "stub:", "cron job:", "hermes send:"):
+        for needle in ("store:", "default target:", "template:", "reminders:      1 pending",
+                       "stub:", "cron job:", "hermes send:"):
             self.assertIn(needle, out)
 
     def test_poll_reports_nothing_due(self):

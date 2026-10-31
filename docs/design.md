@@ -50,7 +50,11 @@ environment. Consequences that matter:
    `target` (optional per-reminder override), `attempts`, `last_error`.
 2. **Interfaces** —
    - agent tools: `reminders_add`, `reminders_list`, `reminders_cancel`;
-   - CLI: `hermes reminders add|list|cancel|setup|poll` — the stable contract any local
+   - a bundled skill (`reminders:using`) whose only job is to stop a model rediscovering the
+     plugin: without it, an agent asked to "remind me in 5 minutes" searches memory, `ls`es
+     `~/.hermes/cron/`, reads this repo and finally shells out to the CLI — eight tool calls
+     where one would do;
+   - CLI: `hermes reminders add|list|cancel|setup|poll|status` — the stable contract any local
      process can call (a voice lane, a script, a cron job of its own).
    Both go through the same store module, so they cannot drift.
 3. **Poller** — `poller.main()`: read the store, take everything with `due_at <= now`,
@@ -73,6 +77,13 @@ reminder inspectable and cancellable, and keeps N reminders out of N job records
 Delivery is `hermes send --to <target> "<text>"`. That reuses the platform credentials
 Hermes is already configured with, so there are no tokens or chat ids in this plugin, and
 it needs no running gateway for bot-token platforms.
+
+**Presentation happens here, not in the store.** `message.render()` turns a record into the
+message that lands — by default a 🔔-prefixed sentence followed by `(Reminder set on …)`, in
+the local time of the machine running the poller. The stored `text` stays exactly as given, so
+changing the format never rewrites the pool, and the format is one template string the user
+owns (`hermes reminders setup --template`). A template with a broken placeholder falls back to
+the default: a typo must not cost someone a reminder.
 
 `hermes send` exits 0 only when the platform accepted the message, and 1 when delivery
 failed at the platform level. That exit code is the whole pruning rule:

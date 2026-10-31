@@ -54,7 +54,8 @@ prefers to schedule it themselves.
 ## Use it
 
 Agent tools: `reminders_add` (`text`, `when`, optional `target`), `reminders_list`,
-`reminders_cancel`.
+`reminders_cancel`. The plugin also ships a skill (`reminders:using`) that tells an agent to
+reach for the tool in one call instead of rediscovering the store, the CLI or the cron job.
 
 From any shell — the interface the plugin's CLI gives every local process:
 
@@ -69,6 +70,21 @@ hermes reminders poll        # deliver everything due, once
 `--in` takes a duration (`30m`, `2h`, `1.5h`, `1d`). `--at` takes ISO 8601; a timestamp with
 no offset is read as local time, and `Z`/explicit offsets are respected as given. Times are
 stored as absolute UTC instants, so daylight-saving changes cannot move a reminder.
+
+## How a reminder arrives
+
+```
+🔔 Charge your phone
+(Reminder set on 31 Oct 2026, 12:43)
+```
+
+The bell and the provenance line are added at delivery, not stored, so `text` should be the
+sentence you want to read: addressed to the reader, imperative — "Charge your phone", not
+"Charge my phone". Change the shape with
+`hermes reminders setup --template "…"`; the placeholders are `{text}`, `{created}`,
+`{created_utc}`, `{due}`, `{due_utc}` and `{id}`, with `{created}`/`{due}` in the local time
+of the machine running the poller. A template with a typo in it falls back to the default
+rather than costing you a reminder.
 
 ## How it works
 
@@ -98,6 +114,7 @@ reasoning, including the retry and pruning rules, is in [docs/design.md](docs/de
 | What | How |
 |---|---|
 | Default delivery target | `hermes reminders setup --target telegram` (per reminder: `--target`) |
+| Delivery format | `hermes reminders setup --template "…"` — default is `🔔 {text}` / `(Reminder set on {created})` |
 | Store location | `$HERMES_HOME/reminders.json`; override with `REMINDERS_STORE` |
 | Retry limit per reminder | `"max_attempts"` in the store file (default 10) |
 | Poller chattiness | `REMINDERS_VERBOSE=1` makes an empty pass print a summary instead of staying silent |

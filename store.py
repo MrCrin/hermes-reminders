@@ -116,7 +116,7 @@ class ReminderStore:
 
     def _read(self) -> dict:
         if not self.path.exists():
-            return {"version": SCHEMA_VERSION, "default_target": None, "reminders": []}
+            return {"version": SCHEMA_VERSION, "default_target": None, "template": None, "reminders": []}
         try:
             data = json.loads(self.path.read_text(encoding="utf-8") or "{}")
         except (OSError, ValueError) as exc:
@@ -125,6 +125,7 @@ class ReminderStore:
             raise StoreError(f"the reminder store at {self.path} is not a JSON object")
         data.setdefault("version", SCHEMA_VERSION)
         data.setdefault("default_target", None)
+        data.setdefault("template", None)
         if not isinstance(data.get("reminders"), list):
             data["reminders"] = []
         return data
@@ -268,4 +269,15 @@ class ReminderStore:
         with self._lock():
             data = self._read()
             data["default_target"] = (target or None)
+            self._write(data)
+
+    def template(self) -> str | None:
+        """The delivery template, or None for the built-in default."""
+        with self._lock():
+            return self._read().get("template")
+
+    def set_template(self, template: str | None) -> None:
+        with self._lock():
+            data = self._read()
+            data["template"] = (template or None)
             self._write(data)

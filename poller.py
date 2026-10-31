@@ -13,6 +13,7 @@ from __future__ import annotations
 import os
 import sys
 
+from . import message
 from .sender import send
 from .store import ReminderStore, StoreError, utcnow
 
@@ -21,10 +22,12 @@ def run_once(store: ReminderStore | None = None, *, verbose: bool = False) -> tu
     """Deliver everything due. Returns ``(delivered, failed)``."""
     store = store or ReminderStore()
     due = store.due(utcnow())
+    template = store.template()
+    default_target = store.default_target()
     delivered = failed = 0
     for record in due:
-        target = record.get("target") or store.default_target()
-        ok, error = send(str(record.get("text", "")), target)
+        target = record.get("target") or default_target
+        ok, error = send(message.render(record, template), target)
         if ok:
             store.mark_delivered(record["id"])
             delivered += 1
