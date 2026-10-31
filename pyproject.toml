@@ -1,0 +1,18 @@
+[project]
+name = "hermes-reminders"
+version = "0.1.0"
+description = "Reminder pool plugin for Hermes Agent: add/list/cancel tools, a CLI, and a single no-LLM cron poller."
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Michael Crinnion" }]
+# Deliberately empty. The plugin and its cron poller are standard-library only, so the poller
+# runs under Hermes' own interpreter, which carries Hermes' dependencies and not necessarily a
+# plugin's. See docs/design.md before adding anything here.
+dependencies = []
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+py-modules = []

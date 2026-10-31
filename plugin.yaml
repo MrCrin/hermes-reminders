@@ -1,0 +1,11 @@
+name: reminders
+version: 0.1.0
+description: "A deterministic reminder pool for Hermes Agent: add, list and cancel reminders from a tool or the CLI, and a single no-LLM cron poller delivers each one and prunes it only on confirmed delivery."
+author: Michael Crinnion
+license: MIT
+kind: backend
+requires_hermes: ">=0.22.0"
+provides_tools:
+  - reminders_add
+  - reminders_list
+  - reminders_cancel
