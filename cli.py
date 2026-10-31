@@ -103,7 +103,7 @@ def scheduler_jobs() -> list[dict]:
 
 
 def installed_job() -> dict | None:
-    """Our poller job, if the scheduler already has it. Guards against a duplicate."""
+    """The plugin's poller job as the scheduler records it, if present — used to avoid adding a duplicate."""
     for job in scheduler_jobs():
         if job.get("name") == JOB_NAME or str(job.get("script") or "").endswith(STUB_NAME):
             return job
@@ -224,7 +224,7 @@ def handle_status(args) -> int:
 
 
 def setup_parser(parser) -> None:
-    """Attach the `reminders` subcommands; the host calls the one `func` we set."""
+    """Attach the `reminders` subcommands and the single handler the host will call."""
     sub = parser.add_subparsers(dest="reminders_command", metavar="<command>")
 
     add = sub.add_parser("add", help="Add a reminder to the pool")

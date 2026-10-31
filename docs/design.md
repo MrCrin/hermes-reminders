@@ -50,10 +50,9 @@ environment. Consequences that matter:
    `target` (optional per-reminder override), `attempts`, `last_error`.
 2. **Interfaces** —
    - agent tools: `reminders_add`, `reminders_list`, `reminders_cancel`;
-   - a bundled skill (`reminders:using`) whose only job is to stop a model rediscovering the
-     plugin: without it, an agent asked to "remind me in 5 minutes" searches memory, `ls`es
-     `~/.hermes/cron/`, reads this repo and finally shells out to the CLI — eight tool calls
-     where one would do;
+   - a bundled skill (`reminders:using`) whose job is discoverability: given only the tools, a
+     request like "remind me in 5 minutes" is easy to misread as a system to go and find, so the
+     agent starts reading files and memory instead of calling `reminders_add`;
    - CLI: `hermes reminders add|list|cancel|setup|poll|status` — the stable contract any local
      process can call (a voice lane, a script, a cron job of its own).
    Both go through the same store module, so they cannot drift.

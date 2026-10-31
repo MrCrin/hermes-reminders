@@ -36,9 +36,9 @@ def register(ctx) -> None:
         ),
     )
 
-    # The skill is how an agent finds the tools instead of rediscovering the system: without
-    # it, a model asked to "remind me in 5 minutes" goes looking through memory, the filesystem
-    # and the CLI, and sets the reminder by shelling out.
+    # The skill is how an agent learns the tools exist without discovering them by hand: a
+    # request like "remind me in 5 minutes" is otherwise easy to misread as a system to go and
+    # find in the filesystem, in memory, or through the CLI.
     skill = Path(__file__).resolve().parent / "SKILL.md"
     if skill.is_file():
         ctx.register_skill(
