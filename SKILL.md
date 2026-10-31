@@ -27,6 +27,9 @@ reminders_add(text="Charge your phone", when="5m")
   no timestamp — delivery formats those (a 🔔 and a `(Reminder set on …)` line).
 - **`when`** is a duration from now (`5m`, `2h`, `1d`) or an absolute ISO 8601 time
   (`2026-11-01T15:00Z`; a time with no offset is read as local).
+- **Delivery goes to the pool's configured target** — normally the user's messaging home
+  channel — and does not come back into this session. Say when it will arrive; don't speculate
+  about how it gets there.
 - One call is the whole job. Reply in one line — the id, the local time it will arrive, and
   nothing else. Don't narrate the lookup, and don't offer to check anything.
 
