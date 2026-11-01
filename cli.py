@@ -80,6 +80,32 @@ def write_stub() -> Path:
     return path
 
 
+# A surface that announces every finished job — the Hermes WebUI toasts completions and counts
+# them in its Tasks badge — would turn a silent once-a-minute poller into continuous noise. These
+# are ordinary per-job fields, so the plugin turns both off when it creates the job and any surface
+# (or the user, later) may change them.
+NOTICE_FIELDS = {"toast_notifications": False, "badge_notifications": False}
+
+
+def mute_completion_notices(job: dict | None) -> bool:
+    """Ask the scheduler to record this job as one whose completions are not worth announcing.
+
+    Best-effort: a Hermes whose scheduler does not expose this store API still gets a working job.
+    """
+    job_id = str((job or {}).get("id") or "")
+    if not job_id:
+        return False
+    try:
+        from cron.jobs import update_job
+    except Exception:
+        return False
+    try:
+        update_job(job_id, dict(NOTICE_FIELDS))
+    except Exception:
+        return False
+    return True
+
+
 def cron_command() -> str:
     return (
         f'hermes cron create "{SCHEDULE}" --name {JOB_NAME} --no-agent '
@@ -192,6 +218,8 @@ def handle_setup(args) -> int:
     ok, detail = create_job()
     if ok:
         print(f"cron:  installed {detail or ''}".rstrip())
+        if mute_completion_notices(installed_job()):
+            print("cron:  completions muted — the job runs every minute and succeeds silently")
         return 0
     print(f"cron:  could not create the job automatically — {detail}", file=sys.stderr)
     print("Create it with:\n  " + cron_command(), file=sys.stderr)
@@ -219,6 +247,8 @@ def handle_status(args) -> int:
     print(f"reminders:      {len(pending)} pending, {len(failed)} failed")
     print(f"stub:           {stub}{'' if stub.exists() else '  (missing — run `hermes reminders setup`)'}")
     print(f"cron job:       {job.get('id') if job else 'not installed'}")
+    announcements = "muted" if job and job.get("toast_notifications") is False else "announced"
+    print(f"completions:    {announcements if job else '—'}")
     print(f"hermes send:    {executable or 'NOT FOUND'}")
     return 0
 

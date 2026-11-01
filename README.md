@@ -51,6 +51,11 @@ hermes reminders status
 `--no-cron` writes the stub only and prints the `hermes cron create` line, for anyone who
 prefers to schedule it themselves.
 
+`setup` also records the job as one whose completions are not worth announcing, so a surface
+that reports every finished job (the Hermes WebUI toasts completions and counts them in its
+Tasks badge) does not turn a silent minute-by-minute poller into noise. Those are ordinary
+per-job fields — turn them back on for that job if you want the confirmation.
+
 ## Use it
 
 Agent tools: `reminders_add` (`text`, `when`, optional `target`), `reminders_list`,
@@ -127,6 +132,9 @@ Disclosed because you should know before installing:
 - writes `$HERMES_HOME/scripts/reminders-poller.py`;
 - creates **one** cron job (`reminders-poller`, every minute, no-agent mode) — and reads
   `$HERMES_HOME/cron/jobs.json` read-only first, so it never creates a duplicate;
+- marks that job as one whose completions should not be announced (`toast_notifications` and
+  `badge_notifications` off), writing it through the scheduler's own store API — so web UIs and
+  dashboards that toast every finished job stay quiet;
 - runs the `hermes` CLI as a subprocess: `hermes send` to deliver, `hermes cron create` during
   `setup`;
 - makes no network calls of its own, sends no telemetry, and holds no credentials of its own —

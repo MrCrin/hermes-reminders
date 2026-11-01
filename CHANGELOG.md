@@ -26,6 +26,9 @@ All notable changes to this project are documented here. The format follows
   rediscovering the system through the filesystem, memory or the CLI.
 - `hermes reminders setup` installs the poller stub into `$HERMES_HOME/scripts/` and creates the
   cron job, idempotently.
+- `setup` also marks the job as one whose completions should not be announced, so a surface that
+  reports every finished job — a web UI toasting completions and counting them in its task badge —
+  does not announce a silent poller 1,440 times a day.
 
 [Unreleased]: https://github.com/MrCrin/hermes-reminders/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/MrCrin/hermes-reminders/releases/tag/v0.1.0
