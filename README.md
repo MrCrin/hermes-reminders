@@ -153,6 +153,12 @@ Two things that are Hermes' policy rather than this plugin's choice, worth knowi
   parameters. There is no per-plugin opt-out; the only switch is the global
   `tools.tool_search` setting (`defer: []` / `enabled: off`), which also makes cold built-ins
   like `session_search` and `cronjob_manage` eager and pays their schema cost every turn.
+- **A surface that started before the plugin did will not see it.** Hermes builds each process's
+  plugin registry when that process starts, so a long-running surface — a WebUI or dashboard
+  server, a desktop backend — installed-before keeps its old registry, and sessions it serves get
+  no reminder tools *and* no bundled skill until that process restarts. Surfaces that re-discover
+  plugins (the gateway, the CLI) need only a new session. If an agent says it has no reminder
+  tools, that is the first thing to check.
 - **A plugin cannot force an agent to comply.** It can make the tool name, the description and
   the instructions unmissable — which is what the descriptions and the bundled skill do. A
   profile that wants the reminder route guaranteed regardless of the task adds one standing line

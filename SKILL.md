@@ -47,5 +47,7 @@ reminders_cancel(id="c8eb6cea")        # an unambiguous id prefix works
   when it came due.
 - **Don't read or write the pool file.** The tools take the lock and write atomically;
   editing it by hand can lose a reminder.
-- **If `reminders_add` isn't available**, the plugin is not enabled in this session. Say so and
-  stop — don't improvise another route to a reminder.
+- **If `reminders_add` isn't available**, this session cannot see the plugin: it is either not
+  enabled, or the surface's process started before the plugin was installed (a WebUI or dashboard
+  server keeps its own registry until it restarts). Say that, and stop — **do not build a cron job
+  instead**. A cron job runs a model to say the sentence, costs tokens, and formats nothing.
