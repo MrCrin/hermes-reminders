@@ -158,6 +158,16 @@ Two things that are Hermes' policy rather than this plugin's choice, worth knowi
   profile that wants the reminder route guaranteed regardless of the task adds one standing line
   to its own `SOUL.md`.
 
+## Versioning
+
+Semantic Versioning, declared in `plugin.yaml` and `pyproject.toml` — a test keeps the two in step,
+because a version that drifts from the code is worse than no version at all.
+
+The public interface is the tool names and their arguments, the CLI, and the store file format. A
+breaking change to any of those is a major bump; the store also carries its own `version` field so a
+format change can migrate rather than break. Notable changes are recorded in
+[CHANGELOG.md](CHANGELOG.md), and a release is an annotated git tag (`v0.1.0`).
+
 ## Development
 
 ```bash
