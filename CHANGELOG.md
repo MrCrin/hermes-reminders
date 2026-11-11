@@ -6,6 +6,16 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Recurring reminders via `every` on `reminders_add` and `--every` on `hermes reminders add`,
+  supporting fixed intervals (`2h`, `7d`) and calendar schedules (`day`, `weekday`, `week`,
+  `month`, `mon,wed,fri`). Delivered recurring reminders advance `due_at` from their immutable
+  `anchor_at` to the next slot strictly after `now`, preventing schedule drift and catch-up floods.
+- In-session `/reminders` slash command (`/reminders`, `/reminders all`, `/reminders cancel <id>`)
+  for listing and cancelling reminders in local time without an LLM turn.
+
+
 ## [0.1.0] - 2026-10-31
 
 ### Added

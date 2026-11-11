@@ -58,23 +58,31 @@ per-job fields — turn them back on for that job if you want the confirmation.
 
 ## Use it
 
-Agent tools: `reminders_add` (`text`, `when`, optional `target`), `reminders_list`,
-`reminders_cancel`. The plugin also ships a skill (`reminders:using`) that tells an agent to
-reach for the tool in one call instead of rediscovering the store, the CLI or the cron job.
+Agent tools: `reminders_add` (`text`, `when`, optional `every`, optional `target`),
+`reminders_list`, `reminders_cancel`. The plugin also registers the `/reminders` slash command
+(`/reminders`, `/reminders all`, `/reminders cancel <id>`) so users can inspect or cancel
+reminders in Telegram, WebUI, or the CLI without an LLM call, plus a skill (`reminders:using`)
+that tells an agent to reach for the tool in one call instead of rediscovering the store, the
+CLI or the cron job.
 
 From any shell — the interface the plugin's CLI gives every local process:
 
 ```bash
 hermes reminders add "check the database" --in 2h
 hermes reminders add "ring the dentist" --at 2026-11-01T15:00Z --target telegram
+hermes reminders add "take vitamins" --at 2026-11-12T08:00:00 --every day
 hermes reminders list --json
 hermes reminders cancel 3f9c1a2b
 hermes reminders poll        # deliver everything due, once
 ```
 
 `--in` takes a duration (`30m`, `2h`, `1.5h`, `1d`). `--at` takes ISO 8601; a timestamp with
-no offset is read as local time, and `Z`/explicit offsets are respected as given. Times are
-stored as absolute UTC instants, so daylight-saving changes cannot move a reminder.
+no offset is read as local time, and `Z`/explicit offsets are respected as given. `--every`
+takes an interval (`2h`, `7d`) or a calendar rule (`day`, `weekday`, `week`, `month`,
+`mon,wed,fri`); each delivery advances `due_at` from the original `anchor_at` timestamp to the
+next future occurrence so schedules never drift and downtime never triggers a burst of missed
+messages.
+
 
 ## How a reminder arrives
 

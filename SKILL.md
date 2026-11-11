@@ -20,6 +20,7 @@ filesystem, no reading `~/.hermes/reminders.json` by hand, no shelling out to
 
 ```
 reminders_add(text="Charge your phone", when="5m")
+reminders_add(text="Stand up and stretch", when="2026-11-12T09:00:00", every="day")
 ```
 
 - **`text` is the sentence that lands on the user's screen.** Write it addressed to them, in
@@ -27,6 +28,9 @@ reminders_add(text="Charge your phone", when="5m")
   no timestamp — delivery formats those (a 🔔 and a `(Reminder set on …)` line).
 - **`when`** is a duration from now (`5m`, `2h`, `1d`) or an absolute ISO 8601 time
   (`2026-11-01T15:00Z`; a time with no offset is read as local).
+- **`every`** (optional) sets a recurring schedule: a duration (`2h`, `7d`) or a calendar rule
+  (`day`, `weekday`, `week`, `month`, `mon,wed,fri`). When delivered, `due_at` advances from
+  the initial anchor time to the next future slot.
 - **Delivery goes to the pool's configured target** — normally the user's messaging home
   channel — and does not come back into this session. Say when it will arrive; don't speculate
   about how it gets there.
@@ -36,9 +40,13 @@ reminders_add(text="Charge your phone", when="5m")
 ## Look at them, cancel one
 
 ```
-reminders_list()                       # ids, due times (UTC) and text
-reminders_cancel(id="c8eb6cea")        # an unambiguous id prefix works
+reminders_list()                       # ids, due times (local + UTC), recurrence and text
+reminders_cancel(id="c8eb6cea")        # an unambiguous id prefix works; stops recurring ones too
 ```
+
+The user can also run `/reminders` (or `/reminders all`, `/reminders cancel <id>`) directly in
+chat without calling the model.
+
 
 ## What not to do
 

@@ -46,16 +46,20 @@ environment. Consequences that matter:
 1. **Store** — one JSON file (`$HERMES_HOME/reminders.json` by default, overridable).
    Atomic write (temp file + `os.replace`) under an advisory lock (`fcntl.flock`), so the
    agent, the CLI and the poller can all touch it safely.
-   Each record: `id`, `text`, `due_at` (UTC, absolute), `created_at`, `created_by`,
+   Each record: `id`, `text`, `due_at` (UTC, absolute), `every` (optional recurrence rule),
+   `anchor_at` (initial UTC anchor for recurring schedules), `created_at`, `created_by`,
    `target` (optional per-reminder override), `attempts`, `last_error`.
 2. **Interfaces** —
    - agent tools: `reminders_add`, `reminders_list`, `reminders_cancel`;
+   - slash command: `/reminders` (`/reminders [all | cancel <id>]`), executed directly without
+     an LLM turn across CLI, WebUI and Telegram;
    - a bundled skill (`reminders:using`) whose job is discoverability: given only the tools, a
      request like "remind me in 5 minutes" is easy to misread as a system to go and find, so the
      agent starts reading files and memory instead of calling `reminders_add`;
    - CLI: `hermes reminders add|list|cancel|setup|poll|status` — the stable contract any local
      process can call (a voice lane, a script, a cron job of its own).
-   Both go through the same store module, so they cannot drift.
+   All go through the same store module, so they cannot drift.
+
 3. **Poller** — `poller.main()`: read the store, take everything with `due_at <= now`,
    send it, prune on success. Prints nothing when there is nothing to do, so the cron
    job is silent, and never calls a model.
@@ -87,16 +91,18 @@ the default: a typo must not cost someone a reminder.
 `hermes send` exits 0 only when the platform accepted the message, and 1 when delivery
 failed at the platform level. That exit code is the whole pruning rule:
 
-- exit 0 → remove the record (a reminder is not repeated);
+- exit 0 → remove a one-shot record, or advance a recurring record's `due_at` from `anchor_at`
+  to the next slot strictly after `now` and clear its retry state;
 - non-zero → keep it, record `last_error`, and retry on the next tick with backoff,
   up to `max_attempts` (default 10), after which it is marked `failed` and stays visible
   in `list`. A reminder is never silently discarded, and never silently repeated.
 
 ## Non-goals
 
-- Recurring reminders — that is what `hermes cron` is for.
-- Scheduling agent work — likewise.
+- Scheduling agent work: that is what `hermes cron` is for.
 - Calendar integration, multi-user delivery, per-reminder retry policies.
+
+
 
 ## What a user should know before installing (disclosures)
 
