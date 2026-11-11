@@ -52,6 +52,23 @@ class CliTests(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(self.store.all(), [])
 
+    def test_add_with_every_shows_recurrence_in_add_and_list(self):
+        code, out, _ = self.run_cli([
+            "add", "standup", "--at", "2026-11-01T09:00Z", "--every", "weekday", "--target", "telegram"
+        ])
+        self.assertEqual(code, 0)
+        self.assertIn("repeats: every weekday", out)
+
+        code, listed, _ = self.run_cli(["list"])
+        self.assertEqual(code, 0)
+        self.assertIn("[every weekday]", listed)
+
+        _, json_out, _ = self.run_cli(["list", "--json"])
+        records = json.loads(json_out)
+        self.assertEqual(records[0]["every"], "weekday")
+        self.assertEqual(records[0]["anchor_at"], "2026-11-01T09:00:00Z")
+
+
     def test_add_without_a_time_is_refused(self):
         code, _, err = self.run_cli(["add", "no time given"])
         self.assertEqual(code, 2)

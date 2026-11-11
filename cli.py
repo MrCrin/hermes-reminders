@@ -163,8 +163,16 @@ def handle_add(args) -> int:
         print("reminders: give a time — `--at 2026-11-01T15:00Z` or `--in 2h`", file=sys.stderr)
         return 2
     store = ReminderStore()
-    record = store.add(args.text, when, created_by="cli", target=args.target)
+    record = store.add(
+        args.text,
+        when,
+        created_by="cli",
+        target=args.target,
+        every=getattr(args, "every", None),
+    )
     print(f"{record['id']}  {record['due_at']}  {record['text']}")
+    if record.get("every"):
+        print(f"repeats: every {record['every']}")
     print("will send:")
     print(message.render(record, store.template()))
     return 0
@@ -183,10 +191,13 @@ def handle_list(args) -> int:
         return 0
     for record in records:
         line = f"{record.get('id')}  {record.get('due_at')}  {record.get('text')}"
+        if record.get("every"):
+            line += f"  [every {record.get('every')}]"
         if record.get("status") != "pending":
             line += f"  [{record.get('status')}: {record.get('last_error')}]"
         print(line)
     return 0
+
 
 
 def handle_cancel(args) -> int:
@@ -264,7 +275,12 @@ def setup_parser(parser) -> None:
     )
     add.add_argument("--at", help="ISO 8601 time (2026-11-01T15:00Z); a time with no offset is read as local")
     add.add_argument("--in", dest="in_", metavar="DURATION", help="Time from now: 2h, 90m, 1d")
+    add.add_argument(
+        "--every",
+        help="Repeat schedule: duration (2h, 7d) or calendar rule (day, weekday, week, month, mon,wed,fri)",
+    )
     add.add_argument("--target", help="Delivery target (e.g. telegram); defaults to the pool default")
+
 
     listing = sub.add_parser("list", help="List the reminders still in the pool")
     listing.add_argument("--all", action="store_true", help="Include reminders whose delivery failed")

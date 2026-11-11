@@ -16,9 +16,10 @@ from __future__ import annotations
 from .store import parse_when
 
 DEFAULT_TEMPLATE = "🔔 {text}\n(Reminder set on {created})"
-PLACEHOLDERS = ("text", "created", "created_utc", "due", "due_utc", "id")
+PLACEHOLDERS = ("text", "created", "created_utc", "due", "due_utc", "id", "every")
 LOCAL_FORMAT = "%d %b %Y, %H:%M"
 UTC_FORMAT = "%Y-%m-%dT%H:%MZ"
+
 
 
 def _stamp(value, *, local: bool) -> str:
@@ -44,7 +45,9 @@ def fields(record) -> dict:
         "due": _stamp(record.get("due_at"), local=True),
         "due_utc": _stamp(record.get("due_at"), local=False),
         "id": str(record.get("id") or ""),
+        "every": str(record.get("every") or "").strip(),
     }
+
 
 
 def render(record, template: str | None = None) -> str:

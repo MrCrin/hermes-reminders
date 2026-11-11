@@ -36,6 +36,15 @@ def register(ctx) -> None:
         ),
     )
 
+    if hasattr(ctx, "register_command"):
+        ctx.register_command(
+            name="reminders",
+            handler=_t.handle_slash,
+            description="List set reminders, or cancel one (/reminders cancel <id>)",
+            args_hint="[all | cancel <id>]",
+        )
+
+
     # The skill is how an agent learns the tools exist without discovering them by hand: a
     # request like "remind me in 5 minutes" is otherwise easy to misread as a system to go and
     # find in the filesystem, in memory, or through the CLI.

@@ -51,6 +51,12 @@ class RenderTests(unittest.TestCase):
     def test_the_text_is_stripped(self):
         self.assertEqual(message.render({"text": "  spaced  "}, "{text}"), "spaced")
 
+    def test_every_placeholder_renders_recurrence(self):
+        recurring = dict(RECORD, every="day")
+        self.assertEqual(message.render(recurring, "{text} ({every})"), "Charge your phone (day)")
+        self.assertEqual(message.render(RECORD, "{every}"), "")
+
+
 
 if __name__ == "__main__":
     unittest.main()
