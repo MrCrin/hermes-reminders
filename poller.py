@@ -21,7 +21,8 @@ from .store import ReminderStore, StoreError, utcnow
 def run_once(store: ReminderStore | None = None, *, verbose: bool = False) -> tuple[int, int]:
     """Deliver everything due. Returns ``(delivered, failed)``."""
     store = store or ReminderStore()
-    due = store.due(utcnow())
+    now = utcnow()
+    due = store.due(now)
     template = store.template()
     default_target = store.default_target()
     delivered = failed = 0
@@ -29,7 +30,7 @@ def run_once(store: ReminderStore | None = None, *, verbose: bool = False) -> tu
         target = record.get("target") or default_target
         ok, error = send(message.render(record, template), target)
         if ok:
-            store.mark_delivered(record["id"])
+            store.mark_delivered(record["id"], now=now)
             delivered += 1
         else:
             failed += 1
@@ -38,6 +39,7 @@ def run_once(store: ReminderStore | None = None, *, verbose: bool = False) -> tu
     if verbose and due:
         print(f"reminders: {delivered} delivered, {failed} failed, {len(due)} due")
     return delivered, failed
+
 
 
 def main(argv: list[str] | None = None) -> int:

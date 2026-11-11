@@ -36,6 +36,18 @@ class PollerTests(unittest.TestCase):
         self.assertIn("send --to telegram --quiet 🔔 check the database", log)
         self.assertIn("(Reminder set on ", log)
 
+    def test_a_due_recurring_reminder_is_sent_and_rescheduled(self):
+        record = self.store.add("daily review", "0s", every="day")
+        before_due = record["due_at"]
+        delivered, failed = poller.run_once()
+        self.assertEqual((delivered, failed), (1, 0))
+        kept = self.store.get(record["id"])
+        self.assertIsNotNone(kept)
+        self.assertEqual(kept["status"], "pending")
+        self.assertGreater(kept["due_at"], before_due)
+        self.assertEqual( poller.run_once(), (0, 0))
+
+
     def test_nothing_due_is_silent_and_sends_nothing(self):
         self.store.add("tomorrow", "1d")
         delivered, failed = poller.run_once()

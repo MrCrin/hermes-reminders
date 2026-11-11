@@ -45,6 +45,46 @@ class ParseWhenTests(unittest.TestCase):
             store.parse_when("")
 
 
+class ParseEveryTests(unittest.TestCase):
+    def test_durations_normalize_to_short_units(self):
+        cases = {
+            "30s": "30s",
+            "10m": "10m",
+            "90 mins": "90m",
+            "2 hours": "2h",
+            "1.5h": "1.5h",
+            "7 days": "7d",
+        }
+        for raw, expected in cases.items():
+            with self.subTest(raw=raw):
+                self.assertEqual(store.parse_every(raw), expected)
+
+    def test_calendar_keywords_and_weekday_lists(self):
+        cases = {
+            "day": "day",
+            "daily": "day",
+            "weekday": "weekday",
+            "weekdays": "weekday",
+            "week": "week",
+            "weekly": "week",
+            "month": "month",
+            "monthly": "month",
+            "Monday": "mon",
+            "fri, mon, wed, mon": "mon,wed,fri",
+            "Tues,Thurs": "tue,thu",
+        }
+        for raw, expected in cases.items():
+            with self.subTest(raw=raw):
+                self.assertEqual(store.parse_every(raw), expected)
+
+    def test_invalid_recurrence_is_rejected(self):
+        for bad in ("", "   ", "0s", "0h", "yearly", "mon,funday"):
+            with self.subTest(bad=bad):
+                with self.assertRaises(ValueError):
+                    store.parse_every(bad)
+
+
+
 class PoolTests(unittest.TestCase):
     def setUp(self):
         self._sandbox = sandbox()
@@ -93,6 +133,108 @@ class PoolTests(unittest.TestCase):
         pruned = self.store.mark_delivered(record["id"])
         self.assertEqual(pruned["id"], record["id"])
         self.assertEqual(self.store.all(), [])
+
+    def test_recurring_interval_advances_from_anchor_without_drift(self):
+        record = self.store.add(
+            "stretch",
+            "2026-11-01T12:00:00Z",
+            every="2h",
+        )
+        self.assertEqual(record["every"], "2h")
+        self.assertEqual(record["anchor_at"], "2026-11-01T12:00:00Z")
+
+        # Delivered 17 seconds past the minute; next slot stays locked to 14:00:00Z.
+        delivered_at = datetime(2026, 11, 1, 12, 0, 17, tzinfo=timezone.utc)
+        advanced = self.store.mark_delivered(record["id"], now=delivered_at)
+        self.assertEqual(advanced["due_at"], "2026-11-01T14:00:00Z")
+        self.assertEqual(advanced["anchor_at"], "2026-11-01T12:00:00Z")
+        self.assertEqual(len(self.store.all()), 1)
+
+    def test_recurring_interval_skips_missed_slots_after_downtime(self):
+        record = self.store.add(
+            "hydrate",
+            "2026-11-01T12:00:00Z",
+            every="1h",
+        )
+        # Host wakes at 15:30Z after 3.5h offline; next slot is 16:00Z, not 13:00Z.
+        woke_at = datetime(2026, 11, 1, 15, 30, 0, tzinfo=timezone.utc)
+        advanced = self.store.mark_delivered(record["id"], now=woke_at)
+        self.assertEqual(advanced["due_at"], "2026-11-01T16:00:00Z")
+
+    def test_recurring_delivery_clears_prior_retry_state(self):
+        record = self.store.add("standup", "2026-11-01T09:00:00Z", every="day")
+        self.store.mark_failed_attempt(record["id"], "temporary outage")
+        advanced = self.store.mark_delivered(
+            record["id"],
+            now=datetime(2026, 11, 1, 9, 2, 0, tzinfo=timezone.utc),
+        )
+        self.assertEqual(advanced["status"], "pending")
+        self.assertEqual(advanced["attempts"], 0)
+        self.assertIsNone(advanced["last_error"])
+        self.assertIsNone(advanced["next_attempt_at"])
+        self.assertEqual(advanced["due_at"], "2026-11-02T09:00:00Z")
+
+    def test_recurring_weekday_and_day_list_advance_to_matching_days(self):
+        # 2026-11-06 is a Friday; next weekday is Monday 2026-11-09.
+        fri = self.store.add("work log", "2026-11-06T17:00:00Z", every="weekday")
+        advanced = self.store.mark_delivered(
+            fri["id"],
+            now=datetime(2026, 11, 6, 17, 0, 5, tzinfo=timezone.utc),
+        )
+        self.assertEqual(advanced["due_at"], "2026-11-09T17:00:00Z")
+
+        # 2026-11-02 is a Monday; next in mon,wed,fri is Wednesday 2026-11-04.
+        mwf = self.store.add("gym", "2026-11-02T07:00:00Z", every="mon,wed,fri")
+        advanced_mwf = self.store.mark_delivered(
+            mwf["id"],
+            now=datetime(2026, 11, 2, 7, 0, 0, tzinfo=timezone.utc),
+        )
+        self.assertEqual(advanced_mwf["due_at"], "2026-11-04T07:00:00Z")
+
+    def test_recurring_monthly_preserves_month_end_anchor(self):
+        # Jan 31 -> Feb 28 -> Mar 31 (never drifts permanently to the 28th).
+        record = self.store.add("invoices", "2026-01-31T09:00:00Z", every="month")
+        feb = self.store.mark_delivered(
+            record["id"],
+            now=datetime(2026, 1, 31, 9, 0, 10, tzinfo=timezone.utc),
+        )
+        self.assertEqual(feb["due_at"], "2026-02-28T09:00:00Z")
+
+        mar = self.store.mark_delivered(
+            record["id"],
+            now=datetime(2026, 2, 28, 9, 0, 10, tzinfo=timezone.utc),
+        )
+        self.assertEqual(mar["due_at"], "2026-03-31T09:00:00Z")
+
+    def test_recurring_cancel_removes_it_permanently(self):
+        record = self.store.add("vitamins", "2026-11-01T08:00:00Z", every="day")
+        self.assertIsNotNone(self.store.cancel(record["id"]))
+        self.assertEqual(self.store.all(), [])
+
+    def test_recurring_daily_keeps_wall_clock_hour_across_dst(self):
+        import os
+        import time
+
+        prev_tz = os.environ.get("TZ")
+        os.environ["TZ"] = "America/New_York"
+        time.tzset()
+        try:
+            # 2026-03-07 09:00 EST is 14:00Z; 2026-03-08 09:00 EDT (after spring-forward) is 13:00Z.
+            record = self.store.add("morning pages", "2026-03-07T09:00:00", every="day")
+            self.assertEqual(record["due_at"], "2026-03-07T14:00:00Z")
+            advanced = self.store.mark_delivered(
+                record["id"],
+                now=datetime(2026, 3, 7, 14, 0, 5, tzinfo=timezone.utc),
+            )
+            self.assertEqual(advanced["due_at"], "2026-03-08T13:00:00Z")
+        finally:
+            if prev_tz is None:
+                os.environ.pop("TZ", None)
+            else:
+                os.environ["TZ"] = prev_tz
+            time.tzset()
+
+
 
     def test_failed_attempt_is_kept_and_backed_off(self):
         record = self.store.add("retry me", "0s")  # due immediately

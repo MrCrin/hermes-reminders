@@ -7,13 +7,16 @@ Format::
 
     {"version": 1, "default_target": "telegram", "reminders": [ {record}, … ]}
 
-A record is ``id``, ``text``, ``due_at`` (UTC), ``created_at``, ``created_by``, ``target``,
-``status`` (``pending`` / ``failed``), ``attempts``, ``last_error``, ``next_attempt_at``.
-Delivered reminders are removed, so the file only ever holds work still to do.
+A record is ``id``, ``text``, ``due_at`` (UTC), ``every``, ``anchor_at``, ``created_at``,
+``created_by``, ``target``, ``status`` (``pending`` / ``failed``), ``attempts``,
+``last_error``, ``next_attempt_at``. One-shot reminders are removed on delivery; recurring
+reminders advance ``due_at`` from ``anchor_at`` to the next future slot.
+
 """
 
 from __future__ import annotations
 
+import calendar
 import fcntl
 import json
 import os
@@ -23,6 +26,7 @@ import uuid
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
 
 STORE_ENV = "REMINDERS_STORE"
 HOME_ENV = "HERMES_HOME"
@@ -43,6 +47,23 @@ _UNIT_ALIASES = {
     "hr": "h", "hrs": "h", "hours": "h",
     "day": "d", "days": "d",
 }
+_CALENDAR_ALIASES = {
+    "day": "day", "daily": "day",
+    "weekday": "weekday", "weekdays": "weekday",
+    "week": "week", "weekly": "week",
+    "month": "month", "monthly": "month",
+}
+_WEEKDAY_NAMES = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+_WEEKDAY_ALIASES = {
+    "mon": 0, "monday": 0,
+    "tue": 1, "tues": 1, "tuesday": 1,
+    "wed": 2, "wednesday": 2,
+    "thu": 3, "thur": 3, "thurs": 3, "thursday": 3,
+    "fri": 4, "friday": 4,
+    "sat": 5, "saturday": 5,
+    "sun": 6, "sunday": 6,
+}
+
 
 
 class StoreError(Exception):
@@ -92,6 +113,92 @@ def parse_when(value: str, *, now: datetime | None = None) -> datetime:
     if moment.tzinfo is None:
         moment = moment.astimezone()
     return moment.astimezone(timezone.utc)
+
+
+def parse_every(value: str) -> str:
+    """Normalize a recurrence rule: a positive duration (`2h`, `7d`) or calendar rule
+    (`day`, `weekday`, `week`, `month`, `mon,wed,fri`)."""
+    text = (value or "").strip().lower()
+    if not text:
+        raise ValueError("no recurrence given")
+    if text in _CALENDAR_ALIASES:
+        return _CALENDAR_ALIASES[text]
+    match = _DURATION_RE.match(text)
+    if match:
+        amount = float(match.group(1))
+        if amount <= 0:
+            raise ValueError(f"recurrence interval must be positive: {value!r}")
+        unit = _UNIT_ALIASES.get(match.group(2).lower(), match.group(2).lower())
+        number = str(int(amount)) if amount.is_integer() else str(amount)
+        return f"{number}{unit}"
+    parts = [part.strip() for part in text.split(",") if part.strip()]
+    if parts and all(part in _WEEKDAY_ALIASES for part in parts):
+        indices = sorted({_WEEKDAY_ALIASES[part] for part in parts})
+        return ",".join(_WEEKDAY_NAMES[idx] for idx in indices)
+    raise ValueError(
+        f"cannot read {value!r} as a recurrence (use a duration like 2h/1d, or day, weekday, week, month, mon,wed,fri)"
+    )
+
+
+def _local_wall_to_utc(year: int, month: int, day: int, hour: int, minute: int, second: int) -> datetime:
+    return datetime(year, month, day, hour, minute, second).astimezone().astimezone(timezone.utc)
+
+
+def next_due(anchor: datetime, every: str, *, after: datetime) -> datetime:
+    """Next occurrence strictly after `after`, anchored to `anchor` so schedules never drift."""
+    rule = parse_every(every)
+    anchor_utc = anchor.astimezone(timezone.utc)
+    cutoff_utc = max(after.astimezone(timezone.utc), anchor_utc)
+
+    match = _DURATION_RE.match(rule)
+    if match:
+        amount = float(match.group(1))
+        unit = _UNIT_ALIASES.get(match.group(2).lower(), match.group(2).lower())
+        step = amount * _UNIT_SECONDS[unit]
+        elapsed = max(0.0, (cutoff_utc - anchor_utc).total_seconds())
+        steps = int(elapsed // step) + 1
+        candidate = anchor_utc + timedelta(seconds=steps * step)
+        while candidate <= cutoff_utc:
+            steps += 1
+            candidate = anchor_utc + timedelta(seconds=steps * step)
+        return candidate.astimezone(timezone.utc)
+
+    anchor_local = anchor_utc.astimezone()
+    cutoff_local = cutoff_utc.astimezone()
+    hh, mm, ss = anchor_local.hour, anchor_local.minute, anchor_local.second
+
+    if rule == "month":
+        year, month = cutoff_local.year, cutoff_local.month
+        for _ in range(24):
+            last_day = calendar.monthrange(year, month)[1]
+            cand = _local_wall_to_utc(year, month, min(anchor_local.day, last_day), hh, mm, ss)
+            if cand > cutoff_utc:
+                return cand
+            if month == 12:
+                year, month = year + 1, 1
+            else:
+                month += 1
+        raise ValueError(f"could not advance monthly reminder from {anchor_utc.isoformat()}")
+
+    allowed_days = (
+        {_WEEKDAY_ALIASES[part] for part in rule.split(",")}
+        if rule not in ("day", "weekday", "week")
+        else None
+    )
+    start_date = cutoff_local.date()
+    for offset in range(15):
+        day_date = start_date + timedelta(days=offset)
+        if rule == "weekday" and day_date.weekday() >= 5:
+            continue
+        if rule == "week" and (day_date - anchor_local.date()).days % 7 != 0:
+            continue
+        if allowed_days is not None and day_date.weekday() not in allowed_days:
+            continue
+        cand = _local_wall_to_utc(day_date.year, day_date.month, day_date.day, hh, mm, ss)
+        if cand > cutoff_utc:
+            return cand
+    raise ValueError(f"could not advance {rule!r} reminder from {anchor_utc.isoformat()}")
+
 
 
 class ReminderStore:
@@ -145,7 +252,15 @@ class ReminderStore:
                 os.unlink(temp_name)
 
     # -- operations ------------------------------------------------------
-    def add(self, text: str, when: str | datetime, *, created_by: str = "unknown", target: str | None = None) -> dict:
+    def add(
+        self,
+        text: str,
+        when: str | datetime,
+        *,
+        created_by: str = "unknown",
+        target: str | None = None,
+        every: str | None = None,
+    ) -> dict:
         """Put one reminder in the pool. Returns the stored record."""
         text = (text or "").strip()
         if not text:
@@ -153,10 +268,14 @@ class ReminderStore:
         due = parse_when(when) if isinstance(when, str) else when
         if not isinstance(due, datetime):
             raise StoreError(f"cannot read {when!r} as a time")
+        recurrence = parse_every(every) if (every and str(every).strip()) else None
+        due_iso = to_iso(due)
         record = {
             "id": uuid.uuid4().hex[:8],
             "text": text,
-            "due_at": to_iso(due),
+            "due_at": due_iso,
+            "every": recurrence,
+            "anchor_at": (due_iso if recurrence else None),
             "created_at": to_iso(utcnow()),
             "created_by": created_by,
             "target": (target or None),
@@ -170,6 +289,7 @@ class ReminderStore:
             data["reminders"].append(record)
             self._write(data)
         return record
+
 
     def all(self) -> list[dict]:
         with self._lock():
@@ -234,9 +354,44 @@ class ReminderStore:
             due.append(record)
         return due
 
-    def mark_delivered(self, ref: str) -> dict | None:
-        """Delivery confirmed: prune the reminder. Returns the pruned record, or None."""
-        return self.cancel(ref)
+    def mark_delivered(self, ref: str, *, now: datetime | None = None) -> dict | None:
+        """Delivery confirmed: prune a one-shot reminder, or advance a recurring one."""
+        ref = (ref or "").strip()
+        if not ref:
+            return None
+        current = now or utcnow()
+        with self._lock():
+            data = self._read()
+            records = data["reminders"]
+            index = None
+            for idx, record in enumerate(records):
+                if record.get("id") == ref:
+                    index = idx
+                    break
+            if index is None:
+                matches = [idx for idx, record in enumerate(records) if str(record.get("id", "")).startswith(ref)]
+                if len(matches) == 1:
+                    index = matches[0]
+            if index is None:
+                return None
+            record = records[index]
+            every = record.get("every")
+            if not every:
+                removed = records.pop(index)
+                self._write(data)
+                return removed
+            current_due = parse_when(record["due_at"])
+            anchor = parse_when(record.get("anchor_at") or record["due_at"])
+            cutoff = max(current, current_due)
+            record["due_at"] = to_iso(next_due(anchor, str(every), after=cutoff))
+            record["anchor_at"] = to_iso(anchor)
+            record["status"] = "pending"
+            record["attempts"] = 0
+            record["last_error"] = None
+            record["next_attempt_at"] = None
+            self._write(data)
+            return dict(record)
+
 
     def mark_failed_attempt(self, ref: str, error: str) -> dict | None:
         """Record a failed delivery and back the retry off. Never drops the reminder."""
