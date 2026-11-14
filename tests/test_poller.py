@@ -33,8 +33,15 @@ class PollerTests(unittest.TestCase):
         self.assertEqual(self.store.all(), [])  # pruned
         self.assertEqual(stdout.getvalue(), "")  # silent tick
         log = self.env["log"].read_text()
-        self.assertIn("send --to telegram --quiet 🔔 check the database", log)
+        self.assertIn("send --to telegram --quiet -- 🔔 check the database", log)
         self.assertIn("(Reminder set on ", log)
+
+    def test_send_separates_options_from_leading_hyphen_message(self):
+        self.store.set_template("- {text}")
+        self.store.add("hyphenated line", "0s")
+        delivered, failed = poller.run_once()
+        self.assertEqual((delivered, failed), (1, 0))
+        self.assertIn("send --to telegram --quiet -- - hyphenated line", self.env["log"].read_text())
 
     def test_a_due_recurring_reminder_is_sent_and_rescheduled(self):
         record = self.store.add("daily review", "0s", every="day")

@@ -48,7 +48,7 @@ def send(text: str, target: str | None = None) -> tuple[bool, str]:
     if not target:
         return False, "no delivery target — pass one, or set a default with `hermes reminders setup --target`"
 
-    command = [executable, "send", "--to", target, "--quiet", text]
+    command = [executable, "send", "--to", target, "--quiet", "--", text]
     try:
         proc = subprocess.run(command, capture_output=True, text=True, timeout=SEND_TIMEOUT_SECONDS)
     except subprocess.TimeoutExpired:
