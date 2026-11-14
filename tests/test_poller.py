@@ -145,6 +145,23 @@ class StubEndToEndTests(unittest.TestCase):
             self.assertIn(cli.PLUGIN_NAME, text)
             self.assertIn("plugins", text)
 
+    def test_the_stub_in_a_secondary_profile_finds_plugin_in_root_home(self):
+        with sandbox() as env:
+            root_home = env["home"]
+            stage_plugin(root_home)
+            profile_home = root_home / "profiles" / "worker"
+            os.environ["HERMES_HOME"] = str(profile_home)
+            stub = cli.write_stub()
+            store.ReminderStore().set_default_target("telegram")
+            store.ReminderStore().add("from secondary profile", "0s")
+
+            proc = subprocess.run(
+                [sys.executable, str(stub)], capture_output=True, text=True, timeout=60
+            )
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertEqual(store.ReminderStore().all(), [])
+            self.assertIn("from secondary profile", env["log"].read_text())
+
 
 if __name__ == "__main__":
     unittest.main()

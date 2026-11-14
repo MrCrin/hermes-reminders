@@ -53,11 +53,15 @@ The poller itself lives in the plugin ($HERMES_HOME/plugins/{plugin}/poller.py) 
 from there on every tick, so a plugin update updates the sender without touching this file.
 Edit the plugin, not this stub.
 """
+import os
 import sys
 from pathlib import Path
 
 _HOME = Path(__file__).resolve().parent.parent   # <HERMES_HOME>/scripts/<this file>
-sys.path.append(str(_HOME / "plugins"))          # appended, so nothing here can shadow stdlib
+os.environ.setdefault("HERMES_HOME", str(_HOME))
+for _candidate in (_HOME / "plugins", _HOME.parent.parent / "plugins", Path.home() / ".hermes" / "plugins"):
+    if _candidate.is_dir():
+        sys.path.append(str(_candidate))         # appended, so nothing here can shadow stdlib
 
 from {plugin}.poller import main  # noqa: E402
 
