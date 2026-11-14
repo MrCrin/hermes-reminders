@@ -17,7 +17,6 @@ reminders advance ``due_at`` from ``anchor_at`` to the next future slot.
 from __future__ import annotations
 
 import calendar
-import fcntl
 import json
 import os
 import re
@@ -27,6 +26,11 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - non-Unix fallback
+    fcntl = None  # type: ignore[assignment]
 
 
 STORE_ENV = "REMINDERS_STORE"
@@ -238,11 +242,13 @@ class ReminderStore:
         lock_path = self.path.parent / (self.path.name + ".lock")
         lock_path.parent.mkdir(parents=True, exist_ok=True)
         with open(lock_path, "w", encoding="utf-8") as handle:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            if fcntl is not None:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
             try:
                 yield
             finally:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+                if fcntl is not None:
+                    fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
     def _read(self) -> dict:
         if not self.path.exists():

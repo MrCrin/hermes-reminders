@@ -306,6 +306,13 @@ class PoolTests(unittest.TestCase):
         with self.assertRaises(store.StoreError):
             self.store.all()
 
+    def test_lock_works_when_fcntl_is_absent(self):
+        from unittest import mock
+
+        with mock.patch.object(store, "fcntl", None):
+            record = self.store.add("no fcntl", "1h")
+            self.assertEqual(self.store.get(record["id"])["text"], "no fcntl")
+
 
 if __name__ == "__main__":
     unittest.main()
