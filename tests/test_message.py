@@ -18,6 +18,13 @@ RECORD = {
 
 
 class RenderTests(unittest.TestCase):
+    def setUp(self):
+        from support import sandbox
+
+        self._sandbox = sandbox(with_hermes=False)
+        self.env = self._sandbox.__enter__()
+        self.addCleanup(lambda: self._sandbox.__exit__(None, None, None))
+
     def test_default_shape(self):
         lines = message.render(RECORD).splitlines()
         self.assertEqual(lines[0], "🔔 Charge your phone")
@@ -55,6 +62,14 @@ class RenderTests(unittest.TestCase):
         recurring = dict(RECORD, every="day")
         self.assertEqual(message.render(recurring, "{text} ({every})"), "Charge your phone (day)")
         self.assertEqual(message.render(RECORD, "{every}"), "")
+
+    def test_local_stamps_use_hermes_config_timezone(self):
+        from support import sandbox
+
+        with sandbox() as env:
+            (env["home"] / "config.yaml").write_text("timezone: America/Edmonton\n", encoding="utf-8")
+            # 2026-10-31T18:48:32Z is 12:48 MDT (UTC-6) in America/Edmonton.
+            self.assertEqual(message.render(RECORD, "{due}"), "31 Oct 2026, 12:48")
 
 
 

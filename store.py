@@ -26,6 +26,7 @@ import uuid
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 STORE_ENV = "REMINDERS_STORE"
@@ -63,6 +64,7 @@ _WEEKDAY_ALIASES = {
     "sat": 5, "saturday": 5,
     "sun": 6, "sunday": 6,
 }
+_CONFIG_TZ_RE = re.compile(r"^timezone:\s*(\S+)")
 
 
 
@@ -79,6 +81,23 @@ def store_path() -> Path:
     """Where the pool lives: ``$REMINDERS_STORE``, else ``$HERMES_HOME/reminders.json``."""
     override = os.environ.get(STORE_ENV)
     return Path(override).expanduser() if override else hermes_home() / DEFAULT_FILENAME
+
+
+def local_timezone() -> ZoneInfo | None:
+    """The configured Hermes timezone from ``$HERMES_HOME/config.yaml``, else None (process local)."""
+    config_path = hermes_home() / "config.yaml"
+    try:
+        with open(config_path, encoding="utf-8") as handle:
+            for line in handle:
+                match = _CONFIG_TZ_RE.match(line)
+                if match:
+                    name = match.group(1).strip().strip("'\"")
+                    if name and name.lower() not in ("null", "none", "~", "local"):
+                        return ZoneInfo(name)
+                    break
+    except (OSError, ZoneInfoNotFoundError, ValueError):
+        pass
+    return None
 
 
 def utcnow() -> datetime:
@@ -111,7 +130,8 @@ def parse_when(value: str, *, now: datetime | None = None) -> datetime:
             f"cannot read {value!r} as a time — give ISO 8601 (2026-11-01T15:00Z) or a duration (2h)"
         ) from exc
     if moment.tzinfo is None:
-        moment = moment.astimezone()
+        tz = local_timezone()
+        moment = moment.replace(tzinfo=tz) if tz is not None else moment.astimezone()
     return moment.astimezone(timezone.utc)
 
 
@@ -141,7 +161,9 @@ def parse_every(value: str) -> str:
 
 
 def _local_wall_to_utc(year: int, month: int, day: int, hour: int, minute: int, second: int) -> datetime:
-    return datetime(year, month, day, hour, minute, second).astimezone().astimezone(timezone.utc)
+    tz = local_timezone()
+    local_dt = datetime(year, month, day, hour, minute, second, tzinfo=tz)
+    return (local_dt if tz is not None else local_dt.astimezone()).astimezone(timezone.utc)
 
 
 def next_due(anchor: datetime, every: str, *, after: datetime) -> datetime:
@@ -163,8 +185,9 @@ def next_due(anchor: datetime, every: str, *, after: datetime) -> datetime:
             candidate = anchor_utc + timedelta(seconds=steps * step)
         return candidate.astimezone(timezone.utc)
 
-    anchor_local = anchor_utc.astimezone()
-    cutoff_local = cutoff_utc.astimezone()
+    tz = local_timezone()
+    anchor_local = anchor_utc.astimezone(tz)
+    cutoff_local = cutoff_utc.astimezone(tz)
     hh, mm, ss = anchor_local.hour, anchor_local.minute, anchor_local.second
 
     if rule == "month":

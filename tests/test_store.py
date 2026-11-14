@@ -14,6 +14,11 @@ from support import sandbox, store  # noqa: E402
 
 
 class ParseWhenTests(unittest.TestCase):
+    def setUp(self):
+        self._sandbox = sandbox(with_hermes=False)
+        self.env = self._sandbox.__enter__()
+        self.addCleanup(lambda: self._sandbox.__exit__(None, None, None))
+
     def test_durations(self):
         now = datetime(2026, 11, 1, 12, 0, tzinfo=timezone.utc)
         cases = {"30s": 30, "10m": 600, "2h": 7200, "1d": 86400, "90 mins": 5400, "1.5h": 5400}
@@ -227,6 +232,30 @@ class PoolTests(unittest.TestCase):
                 now=datetime(2026, 3, 7, 14, 0, 5, tzinfo=timezone.utc),
             )
             self.assertEqual(advanced["due_at"], "2026-03-08T13:00:00Z")
+        finally:
+            if prev_tz is None:
+                os.environ.pop("TZ", None)
+            else:
+                os.environ["TZ"] = prev_tz
+            time.tzset()
+
+    def test_hermes_config_timezone_overrides_utc_process_clock(self):
+        import os
+        import time
+
+        (self.env["home"] / "config.yaml").write_text("timezone: America/Edmonton\n", encoding="utf-8")
+        prev_tz = os.environ.get("TZ")
+        os.environ["TZ"] = "UTC"
+        time.tzset()
+        try:
+            # 2026-11-11 19:00 in America/Edmonton (UTC-6) is 2026-11-12T01:00:00Z, even when OS TZ is UTC.
+            record = self.store.add("Make Proats", "2026-11-11T19:00:00", every="day")
+            self.assertEqual(record["due_at"], "2026-11-12T01:00:00Z")
+            advanced = self.store.mark_delivered(
+                record["id"],
+                now=datetime(2026, 11, 12, 1, 0, 5, tzinfo=timezone.utc),
+            )
+            self.assertEqual(advanced["due_at"], "2026-11-13T01:00:00Z")
         finally:
             if prev_tz is None:
                 os.environ.pop("TZ", None)

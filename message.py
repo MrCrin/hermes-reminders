@@ -13,7 +13,7 @@ whoever reads the message is almost always in that timezone, and a server is not
 
 from __future__ import annotations
 
-from .store import parse_when
+from .store import local_timezone, parse_when
 
 DEFAULT_TEMPLATE = "🔔 {text}\n(Reminder set on {created})"
 PLACEHOLDERS = ("text", "created", "created_utc", "due", "due_utc", "id", "every")
@@ -31,7 +31,7 @@ def _stamp(value, *, local: bool) -> str:
     except ValueError:
         return "unknown"
     if local:
-        return moment.astimezone().strftime(LOCAL_FORMAT)
+        return moment.astimezone(local_timezone()).strftime(LOCAL_FORMAT)
     return moment.strftime(UTC_FORMAT)
 
 

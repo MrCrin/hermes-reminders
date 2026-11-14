@@ -1,5 +1,5 @@
 name: reminders
-version: 0.1.0
+version: 0.2.0
 description: "A simple reminder plugin that won't clutter your cron."
 author: Michael Crinnion
 license: MIT

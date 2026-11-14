@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-14
+
 ### Added
 
 - Recurring reminders via `every` on `reminders_add` and `--every` on `hermes reminders add`,
@@ -14,6 +16,12 @@ All notable changes to this project are documented here. The format follows
   `anchor_at` to the next slot strictly after `now`, preventing schedule drift and catch-up floods.
 - In-session `/reminders` slash command (`/reminders`, `/reminders all`, `/reminders cancel <id>`)
   for listing and cancelling reminders in local time without an LLM turn.
+
+### Fixed
+
+- Naive timestamps, calendar recurrences, and local message timestamps read `timezone` from
+  `$HERMES_HOME/config.yaml` before falling back to the process clock, so CLI, WebUI, and poller
+  processes on a UTC host use the configured Hermes timezone.
 
 
 ## [0.1.0] - 2026-10-31
@@ -40,5 +48,6 @@ All notable changes to this project are documented here. The format follows
   reports every finished job — a web UI toasting completions and counting them in its task badge —
   does not announce a silent poller 1,440 times a day.
 
-[Unreleased]: https://github.com/MrCrin/hermes-reminders/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/MrCrin/hermes-reminders/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/MrCrin/hermes-reminders/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/MrCrin/hermes-reminders/releases/tag/v0.1.0
