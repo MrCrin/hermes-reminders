@@ -96,6 +96,19 @@ class PollerTests(unittest.TestCase):
         self.assertEqual((delivered, failed), (0, 1))
         self.assertIn("no delivery target", self.store.get(record["id"])["last_error"])
 
+    def test_hermes_executable_falls_back_to_user_local_bin(self):
+        from unittest import mock
+
+        fake_user_home = self.env["root"] / "user-home"
+        local_bin = fake_user_home / ".local" / "bin"
+        local_bin.mkdir(parents=True)
+        local_hermes = local_bin / "hermes"
+        local_hermes.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+        local_hermes.chmod(0o755)
+        with mock.patch.object(sender.shutil, "which", return_value=None), \
+                mock.patch.object(sender.Path, "home", return_value=fake_user_home):
+            self.assertEqual(sender.hermes_executable(), str(local_hermes))
+
 
 class StubEndToEndTests(unittest.TestCase):
     """The cron job runs the stub, the stub imports the plugin. Prove that path works."""

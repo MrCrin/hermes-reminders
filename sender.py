@@ -25,7 +25,11 @@ def hermes_executable() -> str | None:
     found = shutil.which("hermes")
     if found:
         return found
-    for candidate in (hermes_home() / "bin" / "hermes", Path("/usr/local/bin/hermes")):
+    for candidate in (
+        Path.home() / ".local" / "bin" / "hermes",
+        hermes_home() / "bin" / "hermes",
+        Path("/usr/local/bin/hermes"),
+    ):
         if candidate.exists():
             return str(candidate)
     return None
