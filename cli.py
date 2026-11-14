@@ -8,13 +8,15 @@ nothing here holds a credential.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from . import message, sender
 from .poller import run_once
-from .store import ReminderStore, StoreError, hermes_home
+from .store import ReminderStore, StoreError, fcntl, hermes_home
 
 STUB_NAME = "reminders-poller.py"
 JOB_NAME = "reminders-poller"
@@ -88,22 +90,50 @@ NOTICE_FIELDS = {"toast_notifications": False, "badge_notifications": False}
 
 
 def mute_completion_notices(job: dict | None) -> bool:
-    """Ask the scheduler to record this job as one whose completions are not worth announcing.
+    """Record this job in ``cron/jobs.json`` as one whose completions are not worth announcing.
 
-    Best-effort: a Hermes whose scheduler does not expose this store API still gets a working job.
+    Updates the scheduler's own JSON store atomically under ``cron/.jobs.lock`` without importing
+    private Hermes internals.
     """
     job_id = str((job or {}).get("id") or "")
     if not job_id:
         return False
-    try:
-        from cron.jobs import update_job
-    except Exception:
+    jobs_path = hermes_home() / "cron" / "jobs.json"
+    if not jobs_path.exists():
         return False
+    lock_path = jobs_path.parent / ".jobs.lock"
     try:
-        update_job(job_id, dict(NOTICE_FIELDS))
-    except Exception:
+        with open(lock_path, "w", encoding="utf-8") as lock_handle:
+            if fcntl is not None:
+                fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
+            try:
+                data = json.loads(jobs_path.read_text(encoding="utf-8") or "{}")
+                records = data.get("jobs") if isinstance(data, dict) else data
+                items = records.values() if isinstance(records, dict) else (records if isinstance(records, list) else ())
+                matched = False
+                for entry in items:
+                    if isinstance(entry, dict) and str(entry.get("id") or "") == job_id:
+                        entry.update(NOTICE_FIELDS)
+                        matched = True
+                if not matched:
+                    return False
+                fd, temp_name = tempfile.mkstemp(dir=str(jobs_path.parent), prefix=".jobs-", suffix=".tmp")
+                try:
+                    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+                        json.dump(data, handle, indent=2, ensure_ascii=False)
+                        handle.write("\n")
+                        handle.flush()
+                        os.fsync(handle.fileno())
+                    os.replace(temp_name, jobs_path)
+                finally:
+                    if os.path.exists(temp_name):
+                        os.unlink(temp_name)
+                return True
+            finally:
+                if fcntl is not None:
+                    fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+    except (OSError, ValueError):
         return False
-    return True
 
 
 def cron_command() -> str:

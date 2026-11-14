@@ -127,30 +127,9 @@ class CliTests(unittest.TestCase):
         self.assertIn("🔔 {text}", out)
 
     def test_setup_mutes_completion_notices_of_the_new_job(self):
-        calls = []
-        fake_cron_jobs = types.ModuleType("cron.jobs")
-        setattr(fake_cron_jobs, "update_job", lambda job_id, updates: (calls.append((job_id, updates)) or {"id": job_id}))
-        fake_cron = types.ModuleType("cron")
-        setattr(fake_cron, "jobs", fake_cron_jobs)
+        cron_dir = self.env["home"] / "cron"
 
         def fake_create():
-            cron_dir = self.env["home"] / "cron"
-            cron_dir.mkdir(parents=True, exist_ok=True)
-            (cron_dir / "jobs.json").write_text(json.dumps(
-                {"jobs": [{"id": "abc123", "name": cli.JOB_NAME, "script": cli.STUB_NAME}]}
-            ))
-            return True, "abc123"
-
-        with mock.patch.object(cli, "create_job", fake_create), \
-                mock.patch.dict(sys.modules, {"cron": fake_cron, "cron.jobs": fake_cron_jobs}):
-            code, out, _ = self.run_cli(["setup"])
-        self.assertEqual(code, 0)
-        self.assertEqual(calls, [("abc123", {"toast_notifications": False, "badge_notifications": False})])
-        self.assertIn("completions muted", out)
-
-    def test_setup_survives_a_host_without_the_notice_api(self):
-        def fake_create():
-            cron_dir = self.env["home"] / "cron"
             cron_dir.mkdir(parents=True, exist_ok=True)
             (cron_dir / "jobs.json").write_text(json.dumps(
                 {"jobs": [{"id": "abc123", "name": cli.JOB_NAME, "script": cli.STUB_NAME}]}
@@ -159,6 +138,18 @@ class CliTests(unittest.TestCase):
 
         with mock.patch.object(cli, "create_job", fake_create), \
                 mock.patch.dict(sys.modules, {"cron": None, "cron.jobs": None}):
+            code, out, _ = self.run_cli(["setup"])
+        self.assertEqual(code, 0)
+        self.assertIn("completions muted", out)
+        saved = json.loads((cron_dir / "jobs.json").read_text())["jobs"][0]
+        self.assertIs(saved["toast_notifications"], False)
+        self.assertIs(saved["badge_notifications"], False)
+
+    def test_setup_survives_an_unwritable_or_missing_jobs_store(self):
+        def fake_create():
+            return True, "abc123"
+
+        with mock.patch.object(cli, "create_job", fake_create):
             code, out, _ = self.run_cli(["setup"])
         self.assertEqual(code, 0)
         self.assertNotIn("completions muted", out)
