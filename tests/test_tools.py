@@ -94,6 +94,31 @@ class ToolsAndSlashTests(unittest.TestCase):
         usage = tools.handle_slash("unknown-subcommand")
         self.assertIn("Usage: /reminders", usage)
 
+    def test_tool_add_warns_when_poller_or_target_is_not_configured(self):
+        import json
+        from support import cli
+
+        unconfigured = tools.handle_add({
+            "text": "Call supplier",
+            "when": "2026-11-01T09:00:00Z",
+        })
+        self.assertIn("hermes reminders setup", unconfigured)
+
+        # Once stub, cron job, and default target are in place, no warning is appended.
+        cli.write_stub()
+        cron_dir = self.env["home"] / "cron"
+        cron_dir.mkdir(parents=True, exist_ok=True)
+        (cron_dir / "jobs.json").write_text(
+            json.dumps({"jobs": [{"id": "job1", "name": cli.JOB_NAME, "script": cli.STUB_NAME}]}),
+            encoding="utf-8",
+        )
+        self.store.set_default_target("telegram")
+        configured = tools.handle_add({
+            "text": "Call supplier",
+            "when": "2026-11-01T09:00:00Z",
+        })
+        self.assertNotIn("hermes reminders setup", configured)
+
 
 if __name__ == "__main__":
     unittest.main()

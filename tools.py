@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from . import message
+from . import cli, message
 from .store import ReminderStore, StoreError
 
 ADD_SCHEMA = {
@@ -97,10 +97,21 @@ def handle_add(args: dict, **kwargs) -> str:
     preview = message.render(record, store.template())
     due_local = message.fields(record)["due"]
     recurrence = f", repeats every {record['every']}" if record.get("every") else ""
-    return (
+    reply = (
         f"Reminder {record['id']} set for {due_local} ({record['due_at']}){recurrence}.\n"
         f"It will arrive as:\n{preview}"
     )
+    missing = []
+    if not (record.get("target") or store.default_target()):
+        missing.append("no delivery target")
+    if not cli.stub_path().exists() or cli.installed_job() is None:
+        missing.append("poller cron job not installed")
+    if missing:
+        reply += (
+            f"\nWarning: {', '.join(missing)}. "
+            "Run `hermes reminders setup --target <platform>` so due reminders are delivered."
+        )
+    return reply
 
 
 def handle_list(args: dict, **kwargs) -> str:
