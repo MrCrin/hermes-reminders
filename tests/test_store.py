@@ -263,6 +263,22 @@ class PoolTests(unittest.TestCase):
                 os.environ["TZ"] = prev_tz
             time.tzset()
 
+    def test_recurring_calendar_reminder_keeps_wall_clock_hour_after_timezone_move(self):
+        cfg = self.env["home"] / "config.yaml"
+        cfg.write_text("timezone: America/Edmonton\n", encoding="utf-8")
+        # Set at 19:00 in America/Edmonton (2026-11-12T01:00:00Z).
+        record = self.store.add("Make Proats", "2026-11-11T19:00:00", every="day")
+        self.assertEqual(record["anchor_local"], "2026-11-11T19:00:00")
+        self.assertEqual(record["due_at"], "2026-11-12T01:00:00Z")
+
+        # User moves to Europe/London (GMT, UTC+0); next delivery should be 19:00 London (19:00Z), not 01:00Z.
+        cfg.write_text("timezone: Europe/London\n", encoding="utf-8")
+        advanced = self.store.mark_delivered(
+            record["id"],
+            now=datetime(2026, 11, 12, 1, 0, 5, tzinfo=timezone.utc),
+        )
+        self.assertEqual(advanced["due_at"], "2026-11-12T19:00:00Z")
+
 
 
     def test_failed_attempt_is_kept_and_backed_off(self):

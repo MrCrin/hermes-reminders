@@ -170,7 +170,13 @@ def _local_wall_to_utc(year: int, month: int, day: int, hour: int, minute: int, 
     return (local_dt if tz is not None else local_dt.astimezone()).astimezone(timezone.utc)
 
 
-def next_due(anchor: datetime, every: str, *, after: datetime) -> datetime:
+def next_due(
+    anchor: datetime,
+    every: str,
+    *,
+    after: datetime,
+    anchor_local: str | None = None,
+) -> datetime:
     """Next occurrence strictly after `after`, anchored to `anchor` so schedules never drift."""
     rule = parse_every(every)
     anchor_utc = anchor.astimezone(timezone.utc)
@@ -190,15 +196,24 @@ def next_due(anchor: datetime, every: str, *, after: datetime) -> datetime:
         return candidate.astimezone(timezone.utc)
 
     tz = local_timezone()
-    anchor_local = anchor_utc.astimezone(tz)
+    anchor_wall = None
+    if anchor_local:
+        try:
+            parsed_wall = datetime.fromisoformat(str(anchor_local).strip())
+            if parsed_wall.tzinfo is None:
+                anchor_wall = parsed_wall
+        except ValueError:
+            pass
+    if anchor_wall is None:
+        anchor_wall = anchor_utc.astimezone(tz)
     cutoff_local = cutoff_utc.astimezone(tz)
-    hh, mm, ss = anchor_local.hour, anchor_local.minute, anchor_local.second
+    hh, mm, ss = anchor_wall.hour, anchor_wall.minute, anchor_wall.second
 
     if rule == "month":
         year, month = cutoff_local.year, cutoff_local.month
         for _ in range(24):
             last_day = calendar.monthrange(year, month)[1]
-            cand = _local_wall_to_utc(year, month, min(anchor_local.day, last_day), hh, mm, ss)
+            cand = _local_wall_to_utc(year, month, min(anchor_wall.day, last_day), hh, mm, ss)
             if cand > cutoff_utc:
                 return cand
             if month == 12:
@@ -217,7 +232,7 @@ def next_due(anchor: datetime, every: str, *, after: datetime) -> datetime:
         day_date = start_date + timedelta(days=offset)
         if rule == "weekday" and day_date.weekday() >= 5:
             continue
-        if rule == "week" and (day_date - anchor_local.date()).days % 7 != 0:
+        if rule == "week" and (day_date - anchor_wall.date()).days % 7 != 0:
             continue
         if allowed_days is not None and day_date.weekday() not in allowed_days:
             continue
@@ -299,12 +314,18 @@ class ReminderStore:
             raise StoreError(f"cannot read {when!r} as a time")
         recurrence = parse_every(every) if (every and str(every).strip()) else None
         due_iso = to_iso(due)
+        anchor_local_iso = (
+            due.astimezone(local_timezone()).replace(tzinfo=None).isoformat(timespec="seconds")
+            if recurrence
+            else None
+        )
         record = {
             "id": uuid.uuid4().hex[:8],
             "text": text,
             "due_at": due_iso,
             "every": recurrence,
             "anchor_at": (due_iso if recurrence else None),
+            "anchor_local": anchor_local_iso,
             "created_at": to_iso(utcnow()),
             "created_by": created_by,
             "target": (target or None),
@@ -411,9 +432,14 @@ class ReminderStore:
                 return removed
             current_due = parse_when(record["due_at"])
             anchor = parse_when(record.get("anchor_at") or record["due_at"])
+            anchor_local = record.get("anchor_local")
             cutoff = max(current, current_due)
-            record["due_at"] = to_iso(next_due(anchor, str(every), after=cutoff))
+            record["due_at"] = to_iso(
+                next_due(anchor, str(every), after=cutoff, anchor_local=anchor_local)
+            )
             record["anchor_at"] = to_iso(anchor)
+            if anchor_local:
+                record["anchor_local"] = anchor_local
             record["status"] = "pending"
             record["attempts"] = 0
             record["last_error"] = None
