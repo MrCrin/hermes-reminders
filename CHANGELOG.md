@@ -6,6 +6,59 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-22
+
+### Added
+
+- `weekend` and `weekends` as recurrence rules: Saturday and Sunday, the mirror of `weekday`.
+  A day list already covered this (`sat,sun`), so nothing that worked before stops working.
+- A cycle of weeks: `2w` for every other week, `2w:mon,wed` for every other week on two days,
+  and `3w` and up. A week cycle is a calendar week rather than 604800 seconds, so it keeps its
+  clock time across a change of the clocks and across a move to another timezone; `14d` remains
+  the raw-interval spelling of a fortnight. `2w:mon,wed` fires both days of one week and neither
+  of the next, because the cycle counts whole weeks from the anchor.
+- A week of the month: `first:mon` for the first Monday of each month, `last:fri` for the last,
+  and `second:tue`, `third:wed`, `fourth:thu` for those between. A day list works here too, and
+  `last:mon,wed` means whichever of the two the month reaches last.
+- The phrases these rules are usually written as are read as the rules themselves: `every other
+  week`, `biweekly`, `fortnightly`, `every second tuesday`, `the first monday of the month`, and
+  `every <rule>` in general, so `every monday` is `mon` and `every 2 weeks` is `2w`.
+
+### Changed
+
+- **A repeating reminder now starts on the first slot its pattern matches.** A `weekday`
+  reminder set for a Saturday was delivered on the Saturday and only settled into the pattern
+  from its second delivery onward. The rule now decides the first delivery as well, which moves
+  that first message to the Monday. The clock time is still the one that was asked for, and a
+  reminder whose time already matches its rule is untouched.
+- The day-pattern walk searches a derived window (one cycle plus its starting day) instead of a
+  hard-coded 15 days, so the bound is stated where a longer pattern would have to change it.
+- A rule the plugin cannot schedule is refused with one message naming the whole vocabulary,
+  rather than a message naming only the token that failed, so a caller learns what it may ask
+  for in one step. Two refusals are deliberate: `fifth:monday`, because a month holds at most
+  four of a weekday and a fifth would silently skip the months that hold none, and `every other
+  day`, because a two-day cycle is not a shape this grammar has and reading it as `day` would
+  deliver twice as often as asked.
+
+### Fixed
+
+- A repeating reminder whose stored rule cannot be read is no longer delivered every minute.
+  The delivery pass sent the message and then failed to advance the rule, which left the
+  reminder `pending` and overdue, so the next tick sent the same message again, indefinitely.
+  The reminder is now retired with the reason recorded against it, and the poller reports the
+  retirement as a failure so it reaches the job's history rather than passing silently.
+- The wall-clock anchor of a repeating reminder now survives a daylight-saving gap. A 02:30
+  reminder set on the day the clocks go forward was stored as 03:30 and stayed there for good;
+  the time of day that was asked for is the one kept.
+- A repeating reminder whose first delivery was asked for a fraction of a second ahead of its
+  pattern's own slot was pushed a whole cycle forward. "In five minutes" lands mid-second and
+  the store keeps whole seconds, so the first slot is now rounded to the second it is written
+  as: a weekday reminder asked for a Wednesday at 09:00:00.4 starts that Wednesday, not the
+  Thursday.
+- A stored rule or timestamp that is not a string (a number, a list) is refused as a value
+  rather than raising an `AttributeError` out of the store. One unreadable record no longer
+  stops the poller, which reads every record in the pool on every tick.
+
 ## [0.2.0] - 2026-11-14
 
 ### Added

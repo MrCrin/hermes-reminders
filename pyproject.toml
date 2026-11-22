@@ -1,6 +1,6 @@
 [project]
 name = "hermes-reminders"
-version = "0.2.0"
+version = "0.3.0"
 description = "Reminder pool plugin for Hermes Agent: add/list/cancel tools, a CLI, and a single no-LLM cron poller."
 requires-python = ">=3.11"
 license = { text = "MIT" }
