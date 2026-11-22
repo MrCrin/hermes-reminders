@@ -5,7 +5,12 @@ this module, so the on-disk format has exactly one definition.
 
 Format::
 
-    {"version": 1, "default_target": "telegram", "reminders": [ {record}, … ]}
+    {"version": 1, "default_target": "telegram", "template": null, "max_attempts": 10,
+     "reminders": [ {record}, … ]}
+
+``default_target``, ``template`` and ``max_attempts`` are the pool's settings, and every one
+of them is optional: an absent or unusable value means the built-in default. `hermes reminders
+setup` writes them, and the store module owns the file, so nothing else should edit them by hand.
 
 A record is ``id``, ``text``, ``due_at`` (UTC), ``every``, ``anchor_at``, ``anchor_local``,
 ``created_at``, ``created_by``, ``target``, ``status`` (``pending`` / ``failed``),
@@ -141,6 +146,18 @@ def local_timezone() -> ZoneInfo | None:
                     break
     except (OSError, ZoneInfoNotFoundError, ValueError):
         pass
+    return None
+
+
+def _positive_int(value: object) -> int | None:
+    """A whole number above zero, or None when the value is not one.
+
+    A retry limit arrives from the pool file, which a person may have edited, so anything
+    that is not a positive whole number is treated as absent rather than taken literally. A
+    typo in this value must not cost a reminder, the same way a broken template does not.
+    """
+    if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+        return value
     return None
 
 
@@ -539,9 +556,33 @@ def first_occurrence(
 class ReminderStore:
     """The pool. Every mutating call takes the lock and rewrites the file atomically."""
 
-    def __init__(self, path: str | os.PathLike | None = None, max_attempts: int = DEFAULT_MAX_ATTEMPTS) -> None:
+    def __init__(self, path: str | os.PathLike | None = None, max_attempts: int | None = None) -> None:
         self.path = Path(path) if path else store_path()
-        self.max_attempts = int(max_attempts)
+        # An explicit limit wins and is used as given; otherwise the pool file's setting is
+        # read on demand, so a process that runs for a while still sees an edit.
+        self._max_attempts = int(max_attempts) if max_attempts is not None else None
+
+    # -- settings --------------------------------------------------------
+    def _retry_limit(self, data: dict) -> int:
+        """The retry limit for one read of the pool. Never takes the lock: the caller has it."""
+        if self._max_attempts is not None:
+            return self._max_attempts
+        return _positive_int(data.get("max_attempts")) or DEFAULT_MAX_ATTEMPTS
+
+    def max_attempts(self) -> int:
+        """The retry limit for this pool: an explicit one, the pool file's, else the default."""
+        with self._lock():
+            return self._retry_limit(self._read())
+
+    def set_max_attempts(self, attempts: int) -> None:
+        """Set the retry limit for the pool, beside the target and the template."""
+        limit = _positive_int(attempts)
+        if limit is None:
+            raise StoreError(f"a retry limit has to be a whole number above zero, not {attempts!r}")
+        with self._lock():
+            data = self._read()
+            data["max_attempts"] = limit
+            self._write(data)
 
     # -- plumbing --------------------------------------------------------
     @contextmanager
@@ -570,6 +611,7 @@ class ReminderStore:
         data.setdefault("version", SCHEMA_VERSION)
         data.setdefault("default_target", None)
         data.setdefault("template", None)
+        data.setdefault("max_attempts", None)
         if not isinstance(data.get("reminders"), list):
             data["reminders"] = []
         return data
@@ -785,7 +827,7 @@ class ReminderStore:
                 return None
             found["attempts"] = int(found.get("attempts") or 0) + 1
             found["last_error"] = (error or "delivery failed")[:500]
-            if found["attempts"] >= self.max_attempts:
+            if found["attempts"] >= self._retry_limit(data):
                 found["status"] = "failed"
                 found["next_attempt_at"] = None
             else:

@@ -659,6 +659,40 @@ class PoolTests(unittest.TestCase):
         # ...and lets it through once the backoff has elapsed.
         self.assertEqual(len(self.store.due(store.utcnow() + timedelta(seconds=120))), 1)
 
+    def test_the_retry_limit_defaults_when_the_pool_file_does_not_set_one(self):
+        self.assertEqual(self.store.max_attempts(), store.DEFAULT_MAX_ATTEMPTS)
+
+    def test_the_retry_limit_comes_from_the_pool_file(self):
+        self.store.set_max_attempts(3)
+        record = self.store.add("three strikes", "1h")
+        self.store.mark_failed_attempt(record["id"], "boom")
+        self.store.mark_failed_attempt(record["id"], "boom")
+        self.assertEqual(self.store.get(record["id"])["status"], "pending")
+        self.store.mark_failed_attempt(record["id"], "boom")
+        self.assertEqual(self.store.get(record["id"])["status"], "failed")
+
+    def test_an_explicit_retry_limit_beats_the_pool_file(self):
+        self.store.set_max_attempts(2)
+        limited = store.ReminderStore(self.store.path, max_attempts=5)
+        self.assertEqual(limited.max_attempts(), 5)
+
+    def test_an_unusable_retry_limit_falls_back_to_the_default(self):
+        # The file is one a person may have edited. A typo in this value must not cost a
+        # reminder, the same way a broken template does not.
+        for bad in ("ten", 0, -3, None, ["10"], 3.5, True, ""):
+            with self.subTest(bad=bad):
+                self.store.add("x", "1h")
+                data = json.loads(self.store.path.read_text())
+                data["max_attempts"] = bad
+                self.store.path.write_text(json.dumps(data))
+                self.assertEqual(self.store.max_attempts(), store.DEFAULT_MAX_ATTEMPTS)
+
+    def test_setting_an_unusable_retry_limit_is_refused(self):
+        for bad in (0, -1, "three", None):
+            with self.subTest(bad=bad):
+                with self.assertRaises(store.StoreError):
+                    self.store.set_max_attempts(bad)
+
     def test_attempts_stop_at_the_limit_and_the_record_survives(self):
         limited = store.ReminderStore(max_attempts=2)
         record = limited.add("never lands", "1h")

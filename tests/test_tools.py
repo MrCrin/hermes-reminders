@@ -75,7 +75,7 @@ class ToolsAndSlashTests(unittest.TestCase):
 
         record = self.store.add("Take vitamins", "2026-11-01T08:00:00Z", every="day")
         failed = self.store.add("Broken target", "2026-11-01T08:00:00Z")
-        for _ in range(self.store.max_attempts):
+        for _ in range(self.store.max_attempts()):
             self.store.mark_failed_attempt(failed["id"], "boom")
 
         pending_only = tools.handle_slash("")
