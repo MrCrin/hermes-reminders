@@ -83,10 +83,31 @@ _WEEKDAY_ALIASES = {
 }
 # The day rules the schedule never has to search for: they begin on their own anchor.
 _UNCONSTRAINED_RULES = ("day", "week", "month")
-# How far a day-of-week walk may look. A slot that has already passed today is only reachable
-# on the same weekday a week later, so a single-day rule needs eight dates from the day it
-# starts on. A rule that cannot be satisfied inside one week is not a rule this build has.
-_CALENDAR_LOOKAHEAD_DAYS = 8
+# Months a walk over a month-based rule may look at before it gives up.
+_MONTH_LOOKAHEAD_MONTHS = 24
+# A rule that names a cycle of weeks: `2w` is a fortnight, `2w:mon,wed` a fortnight on two
+# days of the week. A week here is a calendar week, not 604800 seconds, so the clock time is
+# held across the change of the clocks. A raw interval is spelled in days, as in `14d`.
+_WEEK_CYCLE_RE = re.compile(r"^(\d+)\s*(?:w|week|weeks|weekly)(?::\s*([a-z,\s]+))?$")
+# Which week of the month: `first:mon` and `last:fri`. A month has at most four of any
+# weekday, so the fifth is refused rather than silently skipping months.
+_ORDINAL_RE = re.compile(r"^(first|second|third|fourth|last|1st|2nd|3rd|4th|[1-4]):([a-z,\s]+)$")
+_ORDINAL_ALIASES = {
+    "first": 1, "1st": 1, "1": 1,
+    "second": 2, "2nd": 2, "2": 2,
+    "third": 3, "3rd": 3, "3": 3,
+    "fourth": 4, "4th": 4, "4": 4,
+    "last": -1,
+}
+_ORDINAL_WORDS = {1: "first", 2: "second", 3: "third", 4: "fourth", -1: "last"}
+_UNSUPPORTED_ORDINALS = ("fifth", "5th")
+# One message for every shape this build cannot read, so the caller learns the whole
+# vocabulary rather than the one token that happened to fail.
+_RECURRENCE_HELP = (
+    "cannot read {value!r} as a recurrence (use a duration like 2h/1d, a calendar rule like "
+    "day, weekday, weekend, week, month or mon,wed,fri, a cycle of weeks like 2w or "
+    "2w:mon,wed, or a week of the month like first:mon or last:fri)"
+)
 _CONFIG_TZ_RE = re.compile(r"^timezone:\s*(\S+)")
 
 
@@ -165,20 +186,76 @@ def parse_when(value: str, *, now: datetime | None = None) -> datetime:
     return moment.astimezone(timezone.utc)
 
 
+def _fold_phrase(text: str) -> str:
+    """Fold the common multi-word spellings of a rule into the compact form.
+
+    Only phrasings that name exactly one rule are folded. "Every other day" carries a
+    two-day cycle this build cannot express, so it is left alone and then refused, which is
+    the right answer: reading it as `day` would send the reminder twice as often as asked.
+    """
+    # "every 2 weeks" and "every monday" are the same rules as "2 weeks" and "monday", and
+    # the word adds nothing to any shape that reads correctly with it.
+    text = re.sub(r"^every\s+", "", " ".join(text.split()))
+    for phrase in ("other week", "alternate week", "biweekly", "fortnightly", "fortnight"):
+        if text == phrase:
+            return "2w"
+    # "every other monday" / "every second tuesday" / "alternate friday" -> once a fortnight.
+    match = re.match(r"^(?:other|alternate|second)\s+(\S+)$", text)
+    if match:
+        return f"2w:{match.group(1)}"
+    # "the first monday of the month" / "last friday of each month" -> which week of the month.
+    match = re.match(r"^(?:the\s+)?(\S+)\s+(\S+)\s+of\s+(?:the\s+|each\s+|every\s+)?month$", text)
+    if match:
+        return f"{match.group(1)}:{match.group(2)}"
+    return text
+
+
+def _day_indices(text: str | None) -> list[int]:
+    """The weekdays a comma-separated list names, refusing anything that is not one."""
+    parts = [part.strip() for part in (text or "").split(",") if part.strip()]
+    if not parts:
+        raise ValueError(f"no day of the week in {text!r}")
+    indices = []
+    for part in parts:
+        if part not in _WEEKDAY_ALIASES:
+            raise ValueError(f"not a day of the week: {part!r}")
+        indices.append(_WEEKDAY_ALIASES[part])
+    return indices
+
+
+def _normalise_day_list(text: str) -> str:
+    """Canonical day list: short names, sorted, de-duplicated."""
+    return ",".join(_WEEKDAY_NAMES[index] for index in sorted(set(_day_indices(text))))
+
+
+def _normalise_week_cycle(weeks: int, days: str | None) -> str:
+    """Canonical week cycle: `2w` (the anchor's own weekday) or `2w:mon,wed`."""
+    if weeks < 1:
+        raise ValueError("a cycle of weeks is at least one week")
+    if weeks == 1:
+        return "week" if not days else _normalise_day_list(days)
+    return f"{weeks}w" if not days else f"{weeks}w:{_normalise_day_list(days)}"
+
+
+def _normalise_ordinal(ordinal: str, days: str) -> str:
+    """Canonical month ordinal: `first:mon`, `last:fri`."""
+    return f"{_ORDINAL_WORDS[_ORDINAL_ALIASES[ordinal]]}:{_normalise_day_list(days)}"
+
+
 def parse_every(value: str) -> str:
-    """Normalize a recurrence rule: a positive duration (`2h`, `7d`) or calendar rule
-    (`day`, `weekday`, `weekend`, `week`, `month`, `mon,wed,fri`)."""
+    """Normalize a recurrence rule, and refuse anything this build cannot schedule.
+
+    A rule is a positive duration (`2h`, `7d`), a calendar rule (`day`, `weekday`, `weekend`,
+    `week`, `month`, `mon,wed,fri`), a cycle of weeks (`2w`, `2w:mon,wed`) or a week of the
+    month (`first:mon`, `last:fri`). Anything else raises `ValueError` naming the vocabulary.
+    """
     if not isinstance(value, str):
         # A tool call can carry any JSON type, and a stored rule can be any JSON value. Both
         # have to come back as a readable refusal, not as an AttributeError.
-        raise ValueError(
-            f"cannot read {value!r} as a recurrence — a rule is a string, like 2h or mon,wed,fri"
-        )
-    text = value.strip().lower()
+        raise ValueError(_RECURRENCE_HELP.format(value=value))
+    text = _fold_phrase(value.strip().lower())
     if not text:
         raise ValueError("no recurrence given")
-    if text in _CALENDAR_ALIASES:
-        return _CALENDAR_ALIASES[text]
     match = _DURATION_RE.match(text)
     if match:
         amount = float(match.group(1))
@@ -187,15 +264,23 @@ def parse_every(value: str) -> str:
         unit = _UNIT_ALIASES.get(match.group(2).lower(), match.group(2).lower())
         number = str(int(amount)) if amount.is_integer() else str(amount)
         return f"{number}{unit}"
-    parts = [part.strip() for part in text.split(",") if part.strip()]
-    if parts and all(part in _WEEKDAY_ALIASES for part in parts):
-        indices = sorted({_WEEKDAY_ALIASES[part] for part in parts})
-        return ",".join(_WEEKDAY_NAMES[idx] for idx in indices)
-    raise ValueError(
-        "cannot read "
-        f"{value!r} as a recurrence (use a duration like 2h/1d, or a calendar rule: day, "
-        "weekday, weekend, week, month, or days of the week like mon,wed,fri)"
-    )
+    if text in _CALENDAR_ALIASES:
+        return _CALENDAR_ALIASES[text]
+    if text.startswith(_UNSUPPORTED_ORDINALS):
+        raise ValueError(
+            "a month has at most four of a weekday, so a fifth is not a schedule to set; "
+            "use `last` for the final one"
+        )
+    try:
+        match = _WEEK_CYCLE_RE.match(text)
+        if match:
+            return _normalise_week_cycle(int(match.group(1)), match.group(2))
+        match = _ORDINAL_RE.match(text)
+        if match:
+            return _normalise_ordinal(match.group(1), match.group(2))
+        return _normalise_day_list(text)
+    except ValueError:
+        raise ValueError(_RECURRENCE_HELP.format(value=value)) from None
 
 
 def _local_wall_to_utc(year: int, month: int, day: int, hour: int, minute: int, second: int) -> datetime:
@@ -252,31 +337,143 @@ def _anchor_wall(anchor_utc: datetime, anchor_local: str | datetime | None) -> d
     return anchor_utc.astimezone(local_timezone())
 
 
-def _allowed_days(rule: str) -> frozenset[int]:
-    """The weekdays a day-of-week pattern accepts.
-
-    `weekday`, `weekend` and a day list are the only rules that name a set of weekdays, so
-    anything else reaching here is a bug in this module rather than a rule to interpret.
-    """
-    if rule == "weekday":
+def _day_set(text: str | None) -> frozenset[int]:
+    """The weekdays a named set or a day list covers: `weekday`, `weekend`, or `mon,wed,fri`."""
+    if text == "weekday":
         return _WEEKDAY_DAYS
-    if rule == "weekend":
+    if text == "weekend":
         return _WEEKEND_DAYS
-    days = frozenset(
-        _WEEKDAY_ALIASES[token] for token in rule.split(",") if token in _WEEKDAY_ALIASES
-    )
-    if not days:
-        raise ValueError(f"not a weekday pattern: {rule!r}")
-    return days
+    return frozenset(_day_indices(text))
+
+
+def _week_interval(rule: str) -> int:
+    """How many weeks one cycle of a weekly rule spans: 2 for `2w`, 1 for a plain week."""
+    match = _WEEK_CYCLE_RE.match(rule)
+    return int(match.group(1)) if match else 1
+
+
+def _weekly_days(rule: str, anchor_wall: datetime) -> frozenset[int]:
+    """The weekdays a weekly rule accepts. A bare interval keeps the anchor's own weekday."""
+    match = _WEEK_CYCLE_RE.match(rule)
+    if match is None:
+        return _day_set(rule)
+    if match.group(2):
+        return _day_set(match.group(2))
+    return frozenset({anchor_wall.weekday()})
+
+
+def _lookahead_days(rule: str) -> int:
+    """How far a weekly walk has to look: one full cycle, plus the day it starts on.
+
+    A slot that has already passed today is only reachable on the same weekday a week later,
+    so a single-week rule needs eight dates and a two-week rule fifteen.
+    """
+    return _week_interval(rule) * 7 + 1
 
 
 def _day_matches(rule: str, day: date, anchor_wall: datetime) -> bool:
-    """Does `rule` name this date?"""
+    """Is `day` a date this weekly rule names?
+
+    A cycle of more than one week keeps the weeks it skips: the cycle is counted in whole
+    weeks from the anchor, so `2w:mon,wed` fires Monday and Wednesday of one week and then
+    neither of them the next.
+    """
     if rule == "day":
         return True
     if rule == "week":
         return (day - anchor_wall.date()).days % 7 == 0
-    return day.weekday() in _allowed_days(rule)
+    elapsed = (day - anchor_wall.date()).days
+    if elapsed < 0 or day.weekday() not in _weekly_days(rule, anchor_wall):
+        return False
+    return (elapsed // 7) % _week_interval(rule) == 0
+
+
+def _nth_weekday(year: int, month: int, ordinal: int, weekday: int) -> date | None:
+    """The nth weekday of a month, or the last one, or None when the month holds no nth."""
+    if ordinal == -1:
+        last = date(year, month, calendar.monthrange(year, month)[1])
+        return last - timedelta(days=(last.weekday() - weekday) % 7)
+    first = date(year, month, 1)
+    day = first + timedelta(days=(weekday - first.weekday()) % 7 + 7 * (ordinal - 1))
+    return day if day.month == month else None
+
+
+def _nth_weekday_instant(year: int, month: int, ordinal: int, weekday: int, wall: datetime) -> datetime | None:
+    """The instant of the nth weekday of a month, or None when the month holds no nth."""
+    day = _nth_weekday(year, month, ordinal, weekday)
+    if day is None:
+        return None
+    return _local_wall_to_utc(day.year, day.month, day.day, wall.hour, wall.minute, wall.second)
+
+
+def _next_month(year: int, month: int) -> tuple[int, int]:
+    return (year + 1, 1) if month == 12 else (year, month + 1)
+
+
+def _walk_weekly(rule: str, anchor_wall: datetime, cutoff_utc: datetime, *, inclusive: bool) -> datetime | None:
+    """The first slot of a week-based rule at, or strictly after, the cutoff."""
+    cutoff_local = cutoff_utc.astimezone(local_timezone())
+    hh, mm, ss = anchor_wall.hour, anchor_wall.minute, anchor_wall.second
+    for offset in range(_lookahead_days(rule)):
+        day_date = cutoff_local.date() + timedelta(days=offset)
+        if not _day_matches(rule, day_date, anchor_wall):
+            continue
+        candidate = _local_wall_to_utc(day_date.year, day_date.month, day_date.day, hh, mm, ss)
+        if candidate > cutoff_utc or (inclusive and candidate == cutoff_utc):
+            return candidate
+    return None
+
+
+def _walk_month(anchor_wall: datetime, cutoff_utc: datetime) -> datetime | None:
+    """The next slot on the anchor's own day of the month, capped at a shorter month."""
+    cutoff_local = cutoff_utc.astimezone(local_timezone())
+    hh, mm, ss = anchor_wall.hour, anchor_wall.minute, anchor_wall.second
+    year, month = cutoff_local.year, cutoff_local.month
+    for _ in range(_MONTH_LOOKAHEAD_MONTHS):
+        last_day = calendar.monthrange(year, month)[1]
+        candidate = _local_wall_to_utc(year, month, min(anchor_wall.day, last_day), hh, mm, ss)
+        if candidate > cutoff_utc:
+            return candidate
+        year, month = _next_month(year, month)
+    return None
+
+
+def _walk_monthly(match: re.Match, anchor_wall: datetime, cutoff_utc: datetime, *, inclusive: bool) -> datetime | None:
+    """The first `first:mon`-style slot at, or strictly after, the cutoff."""
+    ordinal = _ORDINAL_ALIASES[match.group(1)]
+    days = _day_set(match.group(2))
+    cutoff_local = cutoff_utc.astimezone(local_timezone())
+    year, month = cutoff_local.year, cutoff_local.month
+    for _ in range(_MONTH_LOOKAHEAD_MONTHS):
+        # A day list here means "the first Monday, and the first Wednesday": the answer is
+        # whichever of them the month reaches first, not the first one written down.
+        upcoming = [
+            candidate
+            for candidate in (
+                _nth_weekday_instant(year, month, ordinal, weekday, anchor_wall)
+                for weekday in days
+            )
+            if candidate is not None
+            and (candidate > cutoff_utc or (inclusive and candidate == cutoff_utc))
+        ]
+        if upcoming:
+            return min(upcoming)
+        year, month = _next_month(year, month)
+    return None
+
+
+def _calendar_slot(rule: str, anchor_wall: datetime, cutoff_utc: datetime, *, inclusive: bool) -> datetime | None:
+    """The first slot of a calendar rule at, or strictly after, the cutoff.
+
+    `month` is never asked for inclusively: `first_occurrence` treats it as already standing
+    on its anchor, so that walk only needs the stricter comparison.
+    """
+    if rule == "month":
+        return _walk_month(anchor_wall, cutoff_utc)
+    ordinal = _ORDINAL_RE.match(rule)
+    if ordinal:
+        return _walk_monthly(ordinal, anchor_wall, cutoff_utc, inclusive=inclusive)
+    return _walk_weekly(rule, anchor_wall, cutoff_utc, inclusive=inclusive)
 
 
 def next_due(
@@ -304,32 +501,12 @@ def next_due(
             candidate = anchor_utc + timedelta(seconds=steps * step)
         return candidate.astimezone(timezone.utc)
 
-    anchor_wall = _anchor_wall(anchor_utc, anchor_local)
-    cutoff_local = cutoff_utc.astimezone(local_timezone())
-    hh, mm, ss = anchor_wall.hour, anchor_wall.minute, anchor_wall.second
-
-    if rule == "month":
-        year, month = cutoff_local.year, cutoff_local.month
-        for _ in range(24):
-            last_day = calendar.monthrange(year, month)[1]
-            cand = _local_wall_to_utc(year, month, min(anchor_wall.day, last_day), hh, mm, ss)
-            if cand > cutoff_utc:
-                return cand
-            if month == 12:
-                year, month = year + 1, 1
-            else:
-                month += 1
-        raise ValueError(f"could not advance monthly reminder from {anchor_utc.isoformat()}")
-
-    start_date = cutoff_local.date()
-    for offset in range(_CALENDAR_LOOKAHEAD_DAYS):
-        day_date = start_date + timedelta(days=offset)
-        if not _day_matches(rule, day_date, anchor_wall):
-            continue
-        cand = _local_wall_to_utc(day_date.year, day_date.month, day_date.day, hh, mm, ss)
-        if cand > cutoff_utc:
-            return cand
-    raise ValueError(f"could not advance {rule!r} reminder from {anchor_utc.isoformat()}")
+    slot = _calendar_slot(
+        rule, _anchor_wall(anchor_utc, anchor_local), cutoff_utc, inclusive=False
+    )
+    if slot is None:
+        raise ValueError(f"could not advance {rule!r} reminder from {anchor_utc.isoformat()}")
+    return slot
 
 
 def first_occurrence(
@@ -340,26 +517,22 @@ def first_occurrence(
 ) -> datetime:
     """The first occurrence of a pattern at or after `anchor`.
 
-    Only the day-of-week patterns can move the anchor: a duration, `day`, `week` and `month`
-    rule already begins on the instant it was asked for. Asked for a Saturday with `weekday`,
-    the first delivery is the Monday; asked for a day the rule already names, it stays exactly
-    where it was.
+    Only the patterns that name days can move the anchor: a duration, `day`, `week` and
+    `month` rule already begins on the instant it was asked for. Asked for a Saturday with
+    `weekday`, the first delivery is the Monday, and `first:mon` asked for after the month's
+    first Monday starts in the next month. Asked for a day the rule already names, it stays
+    exactly where it was.
     """
     rule = parse_every(every)
     anchor_utc = anchor.astimezone(timezone.utc)
     if rule in _UNCONSTRAINED_RULES or _DURATION_RE.match(rule):
         return anchor_utc
-    wall = _anchor_wall(anchor_utc, anchor_local)
-    for offset in range(_CALENDAR_LOOKAHEAD_DAYS):
-        day_date = wall.date() + timedelta(days=offset)
-        if not _day_matches(rule, day_date, wall):
-            continue
-        cand = _local_wall_to_utc(
-            day_date.year, day_date.month, day_date.day, wall.hour, wall.minute, wall.second
-        )
-        if cand >= anchor_utc:
-            return cand
-    raise ValueError(f"could not find a first {rule!r} occurrence from {anchor_utc.isoformat()}")
+    slot = _calendar_slot(
+        rule, _anchor_wall(anchor_utc, anchor_local), anchor_utc, inclusive=True
+    )
+    if slot is None:
+        raise ValueError(f"could not find a first {rule!r} occurrence from {anchor_utc.isoformat()}")
+    return slot
 
 
 
@@ -435,7 +608,7 @@ class ReminderStore:
         # The store keeps whole seconds: `to_iso` writes that much and no more, so rounding
         # here keeps the record and the arithmetic on the same value. "In five minutes" lands
         # mid-second, and a first slot a fraction behind the asked time would otherwise be
-        # pushed a whole cycle forward instead of landing where it was asked for.
+        # pushed to the next matching day.
         due = due.replace(microsecond=0)
         recurrence = parse_every(every) if (every and str(every).strip()) else None
         anchor_local_iso = None

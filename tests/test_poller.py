@@ -55,6 +55,14 @@ class PollerTests(unittest.TestCase):
         self.assertGreater(kept["due_at"], before_due)
         self.assertEqual( poller.run_once(), (0, 0))
 
+    def test_a_two_week_repeat_is_delivered_and_re_armed_a_fortnight_later(self):
+        record = self.store.add("retro", "0s", every="2w")
+        self.assertEqual(poller.run_once(), (1, 0))
+        kept = self.store.get(record["id"])
+        self.assertEqual(kept["status"], "pending")
+        gap = store.parse_when(kept["due_at"]) - store.parse_when(record["due_at"])
+        self.assertEqual(gap, timedelta(days=14))
+
     def test_a_repeat_whose_rule_cannot_be_advanced_is_retired_not_repeated(self):
         """The message is already on the wire by the time the rule is advanced, so a rule this
         build cannot read must retire the reminder rather than put the same sentence on the

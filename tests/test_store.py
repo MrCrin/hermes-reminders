@@ -86,8 +86,9 @@ class ParseEveryTests(unittest.TestCase):
                 self.assertEqual(store.parse_every(raw), expected)
 
     def test_invalid_recurrence_is_rejected(self):
-        for bad in ("", "   ", "0s", "0h", "yearly", "mon,funday",
-                    "mon and wed", "every monday", "2w", "fortnight"):
+        for bad in ("", "   ", "0s", "0h", "0w", "yearly", "mon,funday", "mon and wed",
+                    "every other day", "every other 2nd monday", "2w:day", "first:day",
+                    "first monday", "fifth:monday", "quarterly", "2 months"):
             with self.subTest(bad=bad):
                 with self.assertRaises(ValueError):
                     store.parse_every(bad)
@@ -158,6 +159,201 @@ class CalendarWalkTests(unittest.TestCase):
             with self.subTest(rule=rule):
                 self.assertEqual(store.first_occurrence(monday, rule), monday)
 
+
+
+class WeekIntervalTests(unittest.TestCase):
+    """`2w` and `2w:mon,wed`: a cycle longer than one week."""
+
+    def setUp(self):
+        self._sandbox = sandbox(with_hermes=False)
+        self.env = self._sandbox.__enter__()
+        self.addCleanup(lambda: self._sandbox.__exit__(None, None, None))
+
+    def test_an_interval_is_written_and_read_in_weeks(self):
+        cases = {
+            "2w": "2w",
+            "3w": "3w",
+            "2 week": "2w",
+            "2 weeks": "2w",
+            "every 2 weeks": "2w",
+            "2 weekly": "2w",
+            "every other week": "2w",
+            "biweekly": "2w",
+            "fortnightly": "2w",
+            "fortnight": "2w",
+            "1w": "week",
+            "1w:mon": "mon",
+            "2w:mon": "2w:mon",
+            "2w: monday": "2w:mon",
+            "2w:wed,mon": "2w:mon,wed",
+            "2 weeks: mon, wed": "2w:mon,wed",
+            "every other monday": "2w:mon",
+            "every second tuesday": "2w:tue",
+            "alternate friday": "2w:fri",
+        }
+        for raw, expected in cases.items():
+            with self.subTest(raw=raw):
+                self.assertEqual(store.parse_every(raw), expected)
+
+    def test_a_two_week_cycle_is_a_fortnight_apart(self):
+        monday = datetime(2026, 11, 2, 8, 0, tzinfo=timezone.utc)
+        self.assertEqual(
+            store.next_due(monday, "2w", after=monday),
+            datetime(2026, 11, 16, 8, 0, tzinfo=timezone.utc),
+        )
+
+    def test_a_two_week_cycle_on_a_named_day_skips_the_week_between(self):
+        monday = datetime(2026, 11, 2, 8, 0, tzinfo=timezone.utc)
+        self.assertEqual(
+            store.next_due(monday, "2w:mon", after=monday),
+            datetime(2026, 11, 16, 8, 0, tzinfo=timezone.utc),
+        )
+
+    def test_two_days_in_one_week_share_the_cycle(self):
+        # Anchored Monday: `mon,wed` fires Monday, then Wednesday, then a fortnight on.
+        monday = datetime(2026, 11, 2, 8, 0, tzinfo=timezone.utc)
+        wednesday = store.next_due(monday, "2w:mon,wed", after=monday)
+        self.assertEqual(wednesday, datetime(2026, 11, 4, 8, 0, tzinfo=timezone.utc))
+        # Not Monday the 9th or Wednesday the 11th: that week is skipped entirely.
+        self.assertEqual(
+            store.next_due(monday, "2w:mon,wed", after=wednesday),
+            datetime(2026, 11, 16, 8, 0, tzinfo=timezone.utc),
+        )
+
+    def test_a_three_week_cycle_skips_two_weeks(self):
+        monday = datetime(2026, 11, 2, 8, 0, tzinfo=timezone.utc)
+        self.assertEqual(
+            store.next_due(monday, "3w", after=monday),
+            datetime(2026, 11, 23, 8, 0, tzinfo=timezone.utc),
+        )
+
+    def test_the_first_occurrence_of_a_two_week_cycle_is_the_first_day_it_names(self):
+        # Wednesday 2026-11-04: `2w:mon` cannot start there, so it starts Monday the 9th.
+        wednesday = datetime(2026, 11, 4, 8, 0, tzinfo=timezone.utc)
+        self.assertEqual(
+            store.first_occurrence(wednesday, "2w:mon"),
+            datetime(2026, 11, 9, 8, 0, tzinfo=timezone.utc),
+        )
+
+    def test_the_first_occurrence_keeps_a_two_week_cycle_that_already_matches(self):
+        monday = datetime(2026, 11, 2, 8, 0, tzinfo=timezone.utc)
+        self.assertEqual(store.first_occurrence(monday, "2w:mon"), monday)
+        self.assertEqual(store.first_occurrence(monday, "2w"), monday)
+
+
+class MonthOrdinalTests(unittest.TestCase):
+    """`first:mon` and `last:fri`: which week of the month."""
+
+    def setUp(self):
+        self._sandbox = sandbox(with_hermes=False)
+        self.env = self._sandbox.__enter__()
+        self.addCleanup(lambda: self._sandbox.__exit__(None, None, None))
+
+    def test_an_ordinal_is_written_and_read(self):
+        cases = {
+            "first:mon": "first:mon",
+            "1:mon": "first:mon",
+            "1st:mon": "first:mon",
+            "1st:monday": "first:mon",
+            "first monday of the month": "first:mon",
+            "the first monday of each month": "first:mon",
+            "1st monday of the month": "first:mon",
+            "second:tue": "second:tue",
+            "2nd tuesday of the month": "second:tue",
+            "third:wed": "third:wed",
+            "fourth:thu": "fourth:thu",
+            "last:fri": "last:fri",
+            "last friday of the month": "last:fri",
+            "the last friday of every month": "last:fri",
+            "last:mon,wed": "last:mon,wed",
+        }
+        for raw, expected in cases.items():
+            with self.subTest(raw=raw):
+                self.assertEqual(store.parse_every(raw), expected)
+
+    def test_a_fifth_weekday_is_refused_and_points_at_last(self):
+        with self.assertRaises(ValueError) as caught:
+            store.parse_every("fifth monday of the month")
+        self.assertIn("last", str(caught.exception))
+
+    def test_the_first_monday_of_a_month(self):
+        start = datetime(2026, 11, 1, 9, 0, tzinfo=timezone.utc)
+        first = store.first_occurrence(start, "first:mon")
+        self.assertEqual(first, datetime(2026, 11, 2, 9, 0, tzinfo=timezone.utc))
+        self.assertEqual(
+            store.next_due(first, "first:mon", after=first),
+            datetime(2026, 12, 7, 9, 0, tzinfo=timezone.utc),
+        )
+
+    def test_the_first_occurrence_rolls_into_next_month_once_this_one_has_passed(self):
+        # 2026-11-20 is after November's first Monday, so the first delivery is December's.
+        start = datetime(2026, 11, 20, 9, 0, tzinfo=timezone.utc)
+        self.assertEqual(
+            store.first_occurrence(start, "first:mon"),
+            datetime(2026, 12, 7, 9, 0, tzinfo=timezone.utc),
+        )
+
+    def test_the_last_friday_of_a_month(self):
+        start = datetime(2026, 11, 1, 9, 0, tzinfo=timezone.utc)
+        first = store.first_occurrence(start, "last:fri")
+        self.assertEqual(first, datetime(2026, 11, 27, 9, 0, tzinfo=timezone.utc))
+        self.assertEqual(
+            store.next_due(first, "last:fri", after=first),
+            datetime(2026, 12, 25, 9, 0, tzinfo=timezone.utc),
+        )
+
+    def test_the_last_friday_of_a_short_month(self):
+        # February 2026 ends on Saturday the 28th, so its last Friday is the 27th.
+        start = datetime(2026, 2, 1, 9, 0, tzinfo=timezone.utc)
+        self.assertEqual(
+            store.first_occurrence(start, "last:fri"),
+            datetime(2026, 2, 27, 9, 0, tzinfo=timezone.utc),
+        )
+
+    def test_an_ordinal_crosses_the_year_boundary(self):
+        start = datetime(2026, 12, 20, 9, 0, tzinfo=timezone.utc)
+        first = store.first_occurrence(start, "first:mon")
+        self.assertEqual(first, datetime(2027, 1, 4, 9, 0, tzinfo=timezone.utc))
+
+    def test_an_ordinal_day_list_takes_the_earliest_day_of_that_month(self):
+        # November 2026 starts on a Sunday, so its first Sunday is the 1st and its first
+        # Tuesday is the 3rd. The answer is the 1st, not the first day named in the list.
+        start = datetime(2026, 11, 1, 9, 0, tzinfo=timezone.utc)
+        self.assertEqual(
+            store.first_occurrence(start, "first:tue,sun"),
+            datetime(2026, 11, 1, 9, 0, tzinfo=timezone.utc),
+        )
+
+    def test_an_ordinal_keeps_the_clock_time_it_was_asked_for(self):
+        start = datetime(2026, 11, 1, 17, 45, tzinfo=timezone.utc)
+        self.assertEqual(store.first_occurrence(start, "first:mon").hour, 17)
+        self.assertEqual(store.first_occurrence(start, "first:mon").minute, 45)
+
+    def test_an_ordinal_keeps_its_wall_clock_across_a_daylight_saving_change(self):
+        import os
+        import time
+
+        cfg = self.env["home"] / "config.yaml"
+        cfg.write_text("timezone: America/New_York\n", encoding="utf-8")
+        prev_tz = os.environ.get("TZ")
+        os.environ["TZ"] = "UTC"
+        time.tzset()
+        try:
+            # First Monday of March 2026 is the 2nd, before the 8th, so 09:00 EST is 14:00Z.
+            # April's first Monday is the 6th, after the change, so 09:00 EDT is 13:00Z.
+            start = datetime(2026, 3, 1, 9, 0)
+            first = store.first_occurrence(start, "first:mon", anchor_local=start)
+            self.assertEqual(first, datetime(2026, 3, 2, 14, 0, tzinfo=timezone.utc))
+            self.assertEqual(
+                store.next_due(first, "first:mon", after=first, anchor_local="2026-03-02T09:00:00"),
+                datetime(2026, 4, 6, 13, 0, tzinfo=timezone.utc),
+            )
+        finally:
+            if prev_tz is None:
+                os.environ.pop("TZ", None)
+            else:
+                os.environ["TZ"] = prev_tz
+            time.tzset()
 
 
 class PoolTests(unittest.TestCase):
@@ -414,6 +610,42 @@ class PoolTests(unittest.TestCase):
         record = self.store.add("standup", "2026-11-02T09:00:00.123456Z", every="weekday")
         self.assertEqual(record["due_at"], "2026-11-02T09:00:00Z")
         self.assertEqual(record["anchor_local"], "2026-11-02T09:00:00")
+
+    def test_a_two_week_repeat_advances_from_its_anchor(self):
+        record = self.store.add("retro", "2026-11-02T09:00:00Z", every="2w:mon")
+        advanced = self.store.mark_delivered(
+            record["id"], now=datetime(2026, 11, 2, 9, 0, 5, tzinfo=timezone.utc)
+        )
+        self.assertEqual(advanced["due_at"], "2026-11-16T09:00:00Z")
+        self.assertEqual(advanced["anchor_at"], "2026-11-02T09:00:00Z")
+
+    def test_a_two_week_repeat_keeps_its_wall_clock_across_a_timezone_move(self):
+        cfg = self.env["home"] / "config.yaml"
+        cfg.write_text("timezone: America/Edmonton\n", encoding="utf-8")
+        record = self.store.add("retro", "2026-11-11T19:00:00", every="2w")
+        self.assertEqual(record["anchor_local"], "2026-11-11T19:00:00")
+
+        cfg.write_text("timezone: Europe/London\n", encoding="utf-8")
+        advanced = self.store.mark_delivered(
+            record["id"],
+            now=datetime(2026, 11, 12, 1, 0, 5, tzinfo=timezone.utc),
+        )
+        # A fortnight after 11 Nov is 25 Nov, still at 19:00, now London time.
+        self.assertEqual(advanced["due_at"], "2026-11-25T19:00:00Z")
+
+    def test_a_monthly_ordinal_repeat_snaps_its_first_occurrence(self):
+        # 2026-11-20 is past November's first Monday, so the first delivery is December's.
+        record = self.store.add("payroll", "2026-11-20T09:00:00Z", every="first:mon")
+        self.assertEqual(record["due_at"], "2026-12-07T09:00:00Z")
+        self.assertEqual(record["anchor_local"], "2026-12-07T09:00:00")
+
+    def test_a_monthly_ordinal_repeat_advances_to_the_next_month(self):
+        record = self.store.add("payroll", "2026-11-02T09:00:00Z", every="first:mon")
+        advanced = self.store.mark_delivered(
+            record["id"], now=datetime(2026, 11, 2, 9, 0, 5, tzinfo=timezone.utc)
+        )
+        self.assertEqual(advanced["due_at"], "2026-12-07T09:00:00Z")
+        self.assertEqual(advanced["anchor_at"], "2026-11-02T09:00:00Z")
 
     def test_failed_attempt_is_kept_and_backed_off(self):
         record = self.store.add("retry me", "0s")  # due immediately
