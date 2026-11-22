@@ -312,9 +312,9 @@ def setup_parser(parser) -> None:
     add.add_argument(
         "--every",
         help=(
-            "Repeat schedule: a duration (2h, 7d) or a calendar rule "
-            "(day, weekday, weekend, week, month, mon,wed,fri). The first delivery is the "
-            "first slot the pattern matches"
+            "Repeat schedule: a duration (2h, 7d) or a calendar rule (day, weekday, weekend, "
+            "week, month, mon,wed,fri, 2w, 2w:mon,wed, first:mon, last:fri). The first "
+            "delivery is the first slot the pattern matches"
         ),
     )
     add.add_argument("--target", help="Delivery target (e.g. telegram); defaults to the pool default")

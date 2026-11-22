@@ -87,12 +87,32 @@ no offset is read as local time, and `Z`/explicit offsets are respected as given
 | Rule | Fires |
 | --- | --- |
 | `2h`, `7d`, `1.5h` | every interval, counted from the anchor |
-| `day` | every day, at the anchor's clock time |
+| `day` | every day, at the clock time you gave |
 | `weekday` | Monday to Friday |
 | `weekend` | Saturday and Sunday |
-| `week` | the same weekday each week, at the same clock time |
+| `week` (`1w`) | the same weekday each week, at the same clock time |
 | `month` | the same day of the month, capped at the end of a shorter month |
 | `mon,wed,fri` | those weekdays; `tue,thu` and a single `sat` work the same way |
+| `2w` | every other week, on the anchor's weekday |
+| `2w:mon,wed` | every other week, on Monday and Wednesday |
+| `first:mon` | the first Monday of each month |
+| `last:fri` | the last Friday of each month |
+
+`3w` and up work the same way as `2w`. `second:tue`, `third:wed` and `fourth:thu` name the
+other weeks of the month, and `1` to `4` are accepted in place of the words. A day list works
+with the month rules too: `last:mon,wed` is the last Monday and the last Wednesday of the
+month, whichever of them comes first.
+
+`every other week`, `biweekly`, `fortnightly` and `every second tuesday` are read as the same
+rules as `2w` and `2w:tue`, and `the first monday of the month` as `first:mon`. A rule the
+plugin cannot schedule is refused rather than guessed at, and the refusal names what it does
+understand. Two of those refusals are deliberate:
+
+- `fifth:monday`. A month has at most four of any weekday, so a fifth would silently skip the
+  months that have none. Use `last:mon` for the final one.
+- `every other day`. A two-day cycle is within reach of `2d`, but `2d` is a raw interval that
+  drifts an hour across a change of the clocks, and reading the phrase as `day` would deliver
+  twice as often as you asked. Neither is what the words mean, so it is refused.
 
 Each delivery advances `due_at` from the original `anchor_at` to the next matching slot, so
 schedules never drift and a host that was down does not trigger a burst of missed messages.

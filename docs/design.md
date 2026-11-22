@@ -59,11 +59,35 @@ environment. Consequences that matter:
    instant are not a one-to-one mapping, and a 02:30 reminder read back off its own instant
    would come back as 03:30 and stay there.
 
-   A rule is a duration (`2h`, `7d`) or a calendar pattern. The day patterns — `weekday`,
-   `weekend` and a list like `mon,wed,fri` — also fix which day the first delivery lands on, so
-   a weekday reminder set at the weekend starts on the Monday. The day walk searches one cycle
-   plus its starting day, which is the most any day pattern can need: a slot that has already
-   passed today is a week away.
+   A rule is one string, and `parse_every` is its whole vocabulary. It accepts, and canonicalises
+   to, one of four families:
+
+   | Family | Rule | Canonical |
+   | --- | --- | --- |
+   | a raw interval | `2h`, `7d`, `1.5h` | `2h`, `7d`, `1.5h` |
+   | a named cycle | `day`, `weekday`, `weekend`, `week`, `month` | the same |
+   | a cycle of weeks | `2w`, `2w:mon,wed` | the same |
+   | a week of the month | `first:mon`, `last:fri`, `2:tue` | `first:mon`, `last:fri`, `second:tue` |
+
+   A day list (`mon,wed,fri`) belongs to the named-cycle family: it is `weekday`/`weekend` spelled
+   out. `1w` collapses to `week`, and `1w:mon` to `mon`, because they are the same schedule.
+
+   A raw interval is seconds of arithmetic from the anchor, which is what makes `2h` exact and
+   `7d` drift by an hour across a change of the clocks. A week cycle is deliberately not that: it
+   is a calendar week, so `2w` keeps its clock time forever. The two are distinguished by unit,
+   `d` against `w`, so `14d` and `2w` are the same fortnight except across a timezone change.
+
+   The rules that name days — `weekday`, `weekend`, `mon,wed,fri`, `2w:mon,wed`, `first:mon` —
+   also fix which day the *first* delivery lands on, so a weekday reminder set at the weekend
+   starts on the Monday rather than firing on the Saturday and settling down afterwards. The day
+   walk searches one full cycle plus its starting day, which is the most any of them can need: a
+   slot that has already passed today is one cycle away. A multi-week cycle counts whole weeks
+   from the anchor, so `2w:mon,wed` fires both days of one week and neither of the next.
+
+   A week of the month is refused at the fifth (`fifth:monday`), because a month holds at most
+   four of a weekday and the ones that hold five would silently skip. Anything the grammar cannot
+   express, `every other day` included, is refused rather than guessed at: a refusal costs one
+   retry, and a guess delivers the wrong reminder.
 2. **Interfaces** —
    - agent tools: `reminders_add`, `reminders_list`, `reminders_cancel`;
    - slash command: `/reminders` (`/reminders [all | cancel <id>]`), executed directly without
