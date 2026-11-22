@@ -47,8 +47,23 @@ environment. Consequences that matter:
    Atomic write (temp file + `os.replace`) under an advisory lock (`fcntl.flock`), so the
    agent, the CLI and the poller can all touch it safely.
    Each record: `id`, `text`, `due_at` (UTC, absolute), `every` (optional recurrence rule),
-   `anchor_at` (initial UTC anchor for recurring schedules), `created_at`, `created_by`,
+   `anchor_at` (the immutable UTC instant the schedule is counted from), `anchor_local` (the
+   wall clock that instant means to the reader — see below), `created_at`, `created_by`,
    `target` (optional per-reminder override), `attempts`, `last_error`.
+
+   A recurring record carries two anchors, and they answer different questions. `anchor_at` is
+   the instant every slot is counted from and is never rewritten, so a schedule cannot drift.
+   `anchor_local` is what the next slot is laid out on, so "every day at 19:00" stays at 19:00
+   when the clocks change or the reader moves timezone. A rule with a time of day cannot be
+   computed from the instant alone: on the day the clocks go forward, a local time and an
+   instant are not a one-to-one mapping, and a 02:30 reminder read back off its own instant
+   would come back as 03:30 and stay there.
+
+   A rule is a duration (`2h`, `7d`) or a calendar pattern. The day patterns — `weekday`,
+   `weekend` and a list like `mon,wed,fri` — also fix which day the first delivery lands on, so
+   a weekday reminder set at the weekend starts on the Monday. The day walk searches one cycle
+   plus its starting day, which is the most any day pattern can need: a slot that has already
+   passed today is a week away.
 2. **Interfaces** —
    - agent tools: `reminders_add`, `reminders_list`, `reminders_cancel`;
    - slash command: `/reminders` (`/reminders [all | cancel <id>]`), executed directly without

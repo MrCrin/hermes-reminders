@@ -14,8 +14,8 @@ ADD_SCHEMA = {
         "person: \"Charge your phone\", not \"Charge my phone\". Do not add an emoji or a "
         "timestamp; delivery adds those.\n"
         "`when` is an absolute ISO 8601 time (2026-11-01T15:00Z) or a duration from now "
-        "(5m, 2h, 1d). Pass `every` for a recurring reminder ('2h', 'day', 'weekday', "
-        "'week', 'month', 'mon,wed,fri').\n"
+        "(5m, 2h, 1d). Pass `every` for a recurring reminder: a duration ('2h', '7d') or a "
+        "calendar rule ('day', 'weekday', 'weekend', 'week', 'month', 'mon,wed,fri').\n"
         "Prefer this over a cron job: one-shot jobs that come due while the scheduler "
         "is down are retired rather than delivered, and N reminders would otherwise mean N jobs."
     ),
@@ -33,8 +33,11 @@ ADD_SCHEMA = {
             "every": {
                 "type": "string",
                 "description": (
-                    "Optional recurrence rule: a duration ('2h', '7d') or calendar rule "
-                    "('day', 'weekday', 'week', 'month', 'mon,wed,fri'). Omit for a one-shot reminder."
+                    "Optional recurrence rule. A duration ('2h', '7d'), or a calendar rule: "
+                    "'day', 'weekday' (Mon-Fri), 'weekend' (Sat and Sun), 'week', 'month', "
+                    "or a comma-separated list of days ('mon,wed,fri'). The rule also picks "
+                    "the first delivery, so a 'weekday' reminder asked for on a Saturday "
+                    "starts on the Monday. Omit for a one-shot reminder."
                 ),
             },
             "target": {

@@ -28,9 +28,11 @@ reminders_add(text="Stand up and stretch", when="2026-11-12T09:00:00", every="da
   no timestamp — delivery formats those (a 🔔 and a `(Reminder set on …)` line).
 - **`when`** is a duration from now (`5m`, `2h`, `1d`) or an absolute ISO 8601 time
   (`2026-11-01T15:00Z`; a time with no offset is read as local).
-- **`every`** (optional) sets a recurring schedule: a duration (`2h`, `7d`) or a calendar rule
-  (`day`, `weekday`, `week`, `month`, `mon,wed,fri`). When delivered, `due_at` advances from
-  the initial anchor time to the next future slot.
+- **`every`** (optional) sets a repeating schedule: a duration (`2h`, `7d`) or a calendar
+  rule: `day`, `weekday` (Mon to Fri), `weekend` (Sat and Sun), `week`, `month`, or a
+  comma-separated list of days (`mon,wed,fri`). When delivered, `due_at` advances from the
+  initial anchor time to the next future slot. The rule also picks the **first** delivery, so
+  "every weekday at 9am" asked for on a Saturday arrives on the Monday.
 - **Delivery goes to the pool's configured target** — normally the user's messaging home
   channel — and does not come back into this session. Say when it will arrive; don't speculate
   about how it gets there.

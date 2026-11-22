@@ -71,17 +71,38 @@ From any shell — the interface the plugin's CLI gives every local process:
 hermes reminders add "check the database" --in 2h
 hermes reminders add "ring the dentist" --at 2026-11-01T15:00Z --target telegram
 hermes reminders add "take vitamins" --at 2026-11-12T08:00:00 --every day
+hermes reminders add "long run" --at 2026-11-14T09:00:00 --every weekend
 hermes reminders list --json
 hermes reminders cancel 3f9c1a2b
 hermes reminders poll        # deliver everything due, once
 ```
 
 `--in` takes a duration (`30m`, `2h`, `1.5h`, `1d`). `--at` takes ISO 8601; a timestamp with
-no offset is read as local time, and `Z`/explicit offsets are respected as given. `--every`
-takes an interval (`2h`, `7d`) or a calendar rule (`day`, `weekday`, `week`, `month`,
-`mon,wed,fri`); each delivery advances `due_at` from the original `anchor_at` timestamp to the
-next future occurrence so schedules never drift and downtime never triggers a burst of missed
-messages.
+no offset is read as local time, and `Z`/explicit offsets are respected as given.
+
+### Repeating reminders
+
+`--every` (the `every` argument on `reminders_add`) takes a duration or a calendar rule:
+
+| Rule | Fires |
+| --- | --- |
+| `2h`, `7d`, `1.5h` | every interval, counted from the anchor |
+| `day` | every day, at the anchor's clock time |
+| `weekday` | Monday to Friday |
+| `weekend` | Saturday and Sunday |
+| `week` | the same weekday each week, at the same clock time |
+| `month` | the same day of the month, capped at the end of a shorter month |
+| `mon,wed,fri` | those weekdays; `tue,thu` and a single `sat` work the same way |
+
+Each delivery advances `due_at` from the original `anchor_at` to the next matching slot, so
+schedules never drift and a host that was down does not trigger a burst of missed messages.
+
+The rule also decides the **first** delivery, and the clock time is the one you gave: asked for
+Saturday at 09:00 with `--every weekday`, the first delivery is Monday at 09:00, not the
+Saturday. A rule that already matches the time you asked for is left exactly where it is.
+
+The clock time is held as a local wall clock, so a daily 19:00 reminder stays at 19:00 across a
+daylight-saving change and across a move to another timezone.
 
 
 ## How a reminder arrives
