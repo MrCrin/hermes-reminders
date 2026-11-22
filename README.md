@@ -103,10 +103,14 @@ other weeks of the month, and `1` to `4` are accepted in place of the words. A d
 with the month rules too: `last:mon,wed` is the last Monday and the last Wednesday of the
 month, whichever of them comes first.
 
-`every other week`, `biweekly`, `fortnightly` and `every second tuesday` are read as the same
-rules as `2w` and `2w:tue`, and `the first monday of the month` as `first:mon`. A rule the
-plugin cannot schedule is refused rather than guessed at, and the refusal names what it does
-understand. Two of those refusals are deliberate:
+The table gives the canonical form of each rule; every one of them also accepts a plainer
+English spelling: `daily` for `day`, `weekly` for `week`, `monthly` for `month`, `weekdays` and
+`weekends` for the two named sets, `monday` for `mon`, `every monday` for `mon`, `every other
+week` and `biweekly` and `fortnightly` for `2w`, `every second tuesday` for `2w:tue`, and
+`the first monday of the month` for `first:mon`.
+
+A rule the plugin cannot schedule is refused rather than guessed at, and the refusal names what
+it does understand. Two of those refusals are deliberate:
 
 - `fifth:monday`. A month has at most four of any weekday, so a fifth would silently skip the
   months that have none. Use `last:mon` for the final one.

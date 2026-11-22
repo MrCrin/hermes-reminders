@@ -49,7 +49,8 @@ environment. Consequences that matter:
    Each record: `id`, `text`, `due_at` (UTC, absolute), `every` (optional recurrence rule),
    `anchor_at` (the immutable UTC instant the schedule is counted from), `anchor_local` (the
    wall clock that instant means to the reader — see below), `created_at`, `created_by`,
-   `target` (optional per-reminder override), `attempts`, `last_error`.
+   `target` (optional per-reminder override), `status` (`pending` or `failed`), `attempts`,
+   `last_error`, `next_attempt_at` (when a failed send may be retried).
 
    A recurring record carries two anchors, and they answer different questions. `anchor_at` is
    the instant every slot is counted from and is never rewritten, so a schedule cannot drift.
@@ -131,10 +132,19 @@ the default: a typo must not cost someone a reminder.
 failed at the platform level. That exit code is the whole pruning rule:
 
 - exit 0 → remove a one-shot record, or advance a recurring record's `due_at` from `anchor_at`
-  to the next slot strictly after `now` and clear its retry state;
+  to the next slot after `now` and clear its retry state;
 - non-zero → keep it, record `last_error`, and retry on the next tick with backoff,
   up to `max_attempts` (default 10), after which it is marked `failed` and stays visible
   in `list`. A reminder is never silently discarded, and never silently repeated.
+
+There is a third outcome, and it is what keeps the last sentence honest. A recurring record
+whose rule cannot be read, or cannot be advanced, is **retired**: marked `failed` with the
+reason in `last_error`. By then the message has already gone out, so leaving the record pending
+would put the same sentence on someone's screen every minute for as long as the rule stays
+unreadable, and a rule that cannot advance on this tick will not advance on a later one, so
+there is nothing to wait for. The poller counts a retirement as a failure, which is what makes
+its exit code non-zero and carries the event into the cron job's history; `reminders_list --all`
+shows the record and the reason.
 
 ## Non-goals
 

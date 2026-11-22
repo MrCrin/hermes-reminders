@@ -58,8 +58,8 @@ ADD_SCHEMA = {
 LIST_SCHEMA = {
     "name": "reminders_list",
     "description": (
-        "List the reminders still in the pool, with their ids, due times (UTC) and text. "
-        "Use the id with reminders_cancel to remove one."
+        "List the reminders still in the pool, with their ids, due times (local and UTC), any "
+        "recurrence and their text. Use the id with reminders_cancel to remove one."
     ),
     "parameters": {
         "type": "object",

@@ -3,9 +3,9 @@
 Run every minute by the cron job that `hermes reminders setup` installs, through the stub
 in ``$HERMES_HOME/scripts/``. Also safe to run by hand: ``hermes reminders poll``.
 
-Prints nothing when there is nothing to do (the cron job's own delivery is silent), and
-exits non-zero only when a send failed, so a broken sender shows up in the job's history
-rather than disappearing.
+Prints nothing when there is nothing to do (the cron job's own delivery is silent), and exits
+non-zero when a send failed or a repeating reminder had to be retired, so either one shows up
+in the job's history rather than disappearing.
 """
 
 from __future__ import annotations
@@ -19,7 +19,11 @@ from .store import ReminderStore, StoreError, utcnow
 
 
 def run_once(store: ReminderStore | None = None, *, verbose: bool = False) -> tuple[int, int]:
-    """Deliver everything due. Returns ``(delivered, failed)``."""
+    """Deliver everything due. Returns ``(delivered, failed)``.
+
+    A repeat that could not be rescheduled counts as a failure as well as a send that was
+    refused: the store has retired the record, so it is no longer in the pool to retry.
+    """
     store = store or ReminderStore()
     now = utcnow()
     due = store.due(now)

@@ -706,7 +706,13 @@ class ReminderStore:
         return due
 
     def mark_delivered(self, ref: str, *, now: datetime | None = None) -> dict | None:
-        """Delivery confirmed: prune a one-shot reminder, or advance a recurring one."""
+        """Delivery confirmed: prune a one-shot reminder, or advance a recurring one.
+
+        A repeating reminder whose rule cannot be read or advanced is retired as ``failed``
+        with the reason recorded. The send has already happened by this point, so leaving it
+        pending would deliver the same message again on the next tick, and the rule cannot
+        start working on its own.
+        """
         ref = (ref or "").strip()
         if not ref:
             return None
