@@ -209,9 +209,8 @@ def _wall_clock(instant: datetime, literal: datetime | None = None) -> datetime:
 
     The time of day is the one that was asked for; the date is the one the schedule landed
     on. Reading the whole clock off the instant instead loses the time of day on the date the
-    clocks change, where a local time and an instant are not a one-to-one mapping and the
-    round trip does not hand back what was typed: a 02:30 reminder stored as 03:30 and stays
-    there for good.
+    clocks change, where a local time and an instant are not a one-to-one mapping: a 02:30
+    reminder read back off its own instant comes back as 03:30, and stays there for good.
     """
     local_wall = instant.astimezone(local_timezone()).replace(tzinfo=None)
     if literal is None:
