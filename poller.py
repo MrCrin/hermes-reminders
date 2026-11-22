@@ -29,13 +29,23 @@ def run_once(store: ReminderStore | None = None, *, verbose: bool = False) -> tu
     for record in due:
         target = record.get("target") or default_target
         ok, error = send(message.render(record, template), target)
-        if ok:
-            store.mark_delivered(record["id"], now=now)
-            delivered += 1
-        else:
+        if not ok:
             failed += 1
             store.mark_failed_attempt(record["id"], error)
             print(f"reminders: {record['id']} not delivered: {error}", file=sys.stderr)
+            continue
+        advanced = store.mark_delivered(record["id"], now=now)
+        if advanced is not None and advanced.get("status") == "failed":
+            # The message went out, but the repeat could not be advanced, so the store has
+            # retired it. Counting it as a failure is what carries that into the job's history:
+            # the poller is silent when it succeeds, so a stderr line alone would scroll away.
+            failed += 1
+            print(
+                f"reminders: {record['id']} repeat retired: {advanced.get('last_error')}",
+                file=sys.stderr,
+            )
+        else:
+            delivered += 1
     if verbose and due:
         print(f"reminders: {delivered} delivered, {failed} failed, {len(due)} due")
     return delivered, failed

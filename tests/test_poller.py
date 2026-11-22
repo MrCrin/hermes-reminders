@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import json
 import os
 import subprocess
 import sys
@@ -54,6 +55,71 @@ class PollerTests(unittest.TestCase):
         self.assertGreater(kept["due_at"], before_due)
         self.assertEqual( poller.run_once(), (0, 0))
 
+    def test_a_repeat_whose_rule_cannot_be_advanced_is_retired_not_repeated(self):
+        """The message is already on the wire by the time the rule is advanced, so a rule this
+        build cannot read must retire the reminder rather than put the same sentence on the
+        user's screen every minute until someone notices."""
+        record = self.store.add("drink water", "0s", every="day")
+        # Written by a newer version, or edited by hand: not a rule this build reads.
+        data = json.loads(self.store.path.read_text())
+        data["reminders"][0]["every"] = "every-monday"
+        self.store.path.write_text(json.dumps(data))
+
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr):
+            delivered, failed = poller.run_once()
+        self.assertEqual((delivered, failed), (0, 1))
+        self.assertIn("every-monday", stderr.getvalue())
+
+        kept = self.store.get(record["id"])
+        self.assertEqual(kept["status"], "failed")
+        self.assertIn("every-monday", kept["last_error"])
+        self.assertIsNone(kept["next_attempt_at"])
+
+        # The tick after that has nothing to do, and nothing is sent a second time.
+        self.assertEqual(poller.run_once(), (0, 0))
+        sent = [line for line in self.env["log"].read_text().splitlines() if "drink water" in line]
+        self.assertEqual(len(sent), 1)
+
+    def test_a_repeat_whose_stored_rule_is_not_a_string_is_retired_the_same_way(self):
+        record = self.store.add("drink water", "0s", every="day")
+        data = json.loads(self.store.path.read_text())
+        data["reminders"][0]["every"] = ["mon"]
+        self.store.path.write_text(json.dumps(data))
+
+        with contextlib.redirect_stderr(io.StringIO()):
+            delivered, failed = poller.run_once()
+        self.assertEqual((delivered, failed), (0, 1))
+        self.assertEqual(self.store.get(record["id"])["status"], "failed")
+
+    def test_the_poller_keeps_delivering_after_one_bad_repeat_is_retired(self):
+        """One unreadable record must not cost the reminders queued behind it."""
+        broken = self.store.add("broken", "0s", every="day")
+        healthy = self.store.add("healthy", "0s", every="day")
+        data = json.loads(self.store.path.read_text())
+        for entry in data["reminders"]:
+            if entry["id"] == broken["id"]:
+                entry["every"] = "every-monday"
+        self.store.path.write_text(json.dumps(data))
+
+        with contextlib.redirect_stderr(io.StringIO()):
+            delivered, failed = poller.run_once()
+        self.assertEqual((delivered, failed), (1, 1))
+        self.assertEqual(self.store.get(broken["id"])["status"], "failed")
+        self.assertEqual(self.store.get(healthy["id"])["status"], "pending")
+
+
+    def test_one_unreadable_due_time_does_not_stop_the_rest_of_the_pass(self):
+        broken = self.store.add("broken", "0s")
+        healthy = self.store.add("healthy", "0s")
+        data = json.loads(self.store.path.read_text())
+        for entry in data["reminders"]:
+            if entry["id"] == broken["id"]:
+                entry["due_at"] = 1750000000  # a JSON number, not a timestamp
+        self.store.path.write_text(json.dumps(data))
+
+        self.assertEqual(poller.run_once(), (1, 0))
+        self.assertIsNone(self.store.get(healthy["id"]))  # delivered and pruned
 
     def test_nothing_due_is_silent_and_sends_nothing(self):
         self.store.add("tomorrow", "1d")
