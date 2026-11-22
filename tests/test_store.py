@@ -407,6 +407,14 @@ class PoolTests(unittest.TestCase):
 
 
 
+    def test_a_first_occurrence_a_fraction_of_a_second_ahead_still_lands_today(self):
+        # "in 5 minutes" lands mid-second, and the store keeps whole seconds. The first slot
+        # must not be pushed to tomorrow just because it is a fraction behind the asked time.
+        # 2026-11-02 is a Monday.
+        record = self.store.add("standup", "2026-11-02T09:00:00.123456Z", every="weekday")
+        self.assertEqual(record["due_at"], "2026-11-02T09:00:00Z")
+        self.assertEqual(record["anchor_local"], "2026-11-02T09:00:00")
+
     def test_failed_attempt_is_kept_and_backed_off(self):
         record = self.store.add("retry me", "0s")  # due immediately
         self.store.mark_failed_attempt(record["id"], "connection refused")

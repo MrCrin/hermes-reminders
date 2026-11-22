@@ -432,6 +432,11 @@ class ReminderStore:
         due = parse_when(when) if isinstance(when, str) else when
         if not isinstance(due, datetime):
             raise StoreError(f"cannot read {when!r} as a time")
+        # The store keeps whole seconds: `to_iso` writes that much and no more, so rounding
+        # here keeps the record and the arithmetic on the same value. "In five minutes" lands
+        # mid-second, and a first slot a fraction behind the asked time would otherwise be
+        # pushed a whole cycle forward instead of landing where it was asked for.
+        due = due.replace(microsecond=0)
         recurrence = parse_every(every) if (every and str(every).strip()) else None
         anchor_local_iso = None
         if recurrence:
