@@ -7,10 +7,18 @@ Format::
 
     {"version": 1, "default_target": "telegram", "reminders": [ {record}, … ]}
 
-A record is ``id``, ``text``, ``due_at`` (UTC), ``every``, ``anchor_at``, ``created_at``,
-``created_by``, ``target``, ``status`` (``pending`` / ``failed``), ``attempts``,
-``last_error``, ``next_attempt_at``. One-shot reminders are removed on delivery; recurring
-reminders advance ``due_at`` from ``anchor_at`` to the next future slot.
+A record is ``id``, ``text``, ``due_at`` (UTC), ``every``, ``anchor_at``, ``anchor_local``,
+``created_at``, ``created_by``, ``target``, ``status`` (``pending`` / ``failed``),
+``attempts``, ``last_error``, ``next_attempt_at``. One-shot reminders are removed on
+delivery; recurring reminders advance ``due_at`` from ``anchor_at`` to the next future slot.
+
+A recurring record carries two anchors, and they answer different questions.
+``anchor_at`` is the instant the schedule is counted from and is never rewritten after it
+is set, so the schedule cannot drift. ``anchor_local`` is the wall clock that instant means
+to the reader ("19:00", not "01:00Z"), and it is what the next slot is laid out on, so a
+daily reminder stays at 19:00 across a daylight-saving change and across a move to another
+timezone. A rule carrying a time of day cannot be computed from the instant alone: on the
+day the clocks go forward, the local time and the instant are not a one-to-one mapping.
 
 """
 
@@ -23,7 +31,7 @@ import re
 import tempfile
 import uuid
 from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -55,9 +63,14 @@ _UNIT_ALIASES = {
 _CALENDAR_ALIASES = {
     "day": "day", "daily": "day",
     "weekday": "weekday", "weekdays": "weekday",
+    "weekend": "weekend", "weekends": "weekend",
     "week": "week", "weekly": "week",
     "month": "month", "monthly": "month",
 }
+# The two named day sets. The walk and the two spellings of each set read them from here, so
+# `weekday` cannot mean one thing to the parser and another to the schedule.
+_WEEKDAY_DAYS = frozenset(range(5))
+_WEEKEND_DAYS = frozenset((5, 6))
 _WEEKDAY_NAMES = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 _WEEKDAY_ALIASES = {
     "mon": 0, "monday": 0,
@@ -68,6 +81,12 @@ _WEEKDAY_ALIASES = {
     "sat": 5, "saturday": 5,
     "sun": 6, "sunday": 6,
 }
+# The day rules the schedule never has to search for: they begin on their own anchor.
+_UNCONSTRAINED_RULES = ("day", "week", "month")
+# How far a day-of-week walk may look. A slot that has already passed today is only reachable
+# on the same weekday a week later, so a single-day rule needs eight dates from the day it
+# starts on. A rule that cannot be satisfied inside one week is not a rule this build has.
+_CALENDAR_LOOKAHEAD_DAYS = 8
 _CONFIG_TZ_RE = re.compile(r"^timezone:\s*(\S+)")
 
 
@@ -119,7 +138,14 @@ def parse_when(value: str, *, now: datetime | None = None) -> datetime:
     Anything carrying an offset (or a trailing ``Z``) is taken at face value.
     """
     now = now or utcnow()
-    text = (value or "").strip()
+    if not isinstance(value, str):
+        # A stored value is not guaranteed to be the shape this build writes. Refuse it as a
+        # value rather than raising an AttributeError out of a string method: the poller reads
+        # every record in the pool, so one bad one must not take the delivery pass down.
+        raise ValueError(
+            f"cannot read {value!r} as a time — give ISO 8601 (2026-11-01T15:00Z) or a duration (2h)"
+        )
+    text = value.strip()
     if not text:
         raise ValueError("no time given")
     match = _DURATION_RE.match(text)
@@ -141,8 +167,14 @@ def parse_when(value: str, *, now: datetime | None = None) -> datetime:
 
 def parse_every(value: str) -> str:
     """Normalize a recurrence rule: a positive duration (`2h`, `7d`) or calendar rule
-    (`day`, `weekday`, `week`, `month`, `mon,wed,fri`)."""
-    text = (value or "").strip().lower()
+    (`day`, `weekday`, `weekend`, `week`, `month`, `mon,wed,fri`)."""
+    if not isinstance(value, str):
+        # A tool call can carry any JSON type, and a stored rule can be any JSON value. Both
+        # have to come back as a readable refusal, not as an AttributeError.
+        raise ValueError(
+            f"cannot read {value!r} as a recurrence — a rule is a string, like 2h or mon,wed,fri"
+        )
+    text = value.strip().lower()
     if not text:
         raise ValueError("no recurrence given")
     if text in _CALENDAR_ALIASES:
@@ -160,7 +192,9 @@ def parse_every(value: str) -> str:
         indices = sorted({_WEEKDAY_ALIASES[part] for part in parts})
         return ",".join(_WEEKDAY_NAMES[idx] for idx in indices)
     raise ValueError(
-        f"cannot read {value!r} as a recurrence (use a duration like 2h/1d, or day, weekday, week, month, mon,wed,fri)"
+        "cannot read "
+        f"{value!r} as a recurrence (use a duration like 2h/1d, or a calendar rule: day, "
+        "weekday, weekend, week, month, or days of the week like mon,wed,fri)"
     )
 
 
@@ -170,12 +204,88 @@ def _local_wall_to_utc(year: int, month: int, day: int, hour: int, minute: int, 
     return (local_dt if tz is not None else local_dt.astimezone()).astimezone(timezone.utc)
 
 
+def _wall_clock(instant: datetime, literal: datetime | None = None) -> datetime:
+    """The local wall clock a repeating reminder is anchored to.
+
+    The time of day is the one that was asked for; the date is the one the schedule landed
+    on. Reading the whole clock off the instant instead loses the time of day on the date the
+    clocks change, where a local time and an instant are not a one-to-one mapping and the
+    round trip does not hand back what was typed: a 02:30 reminder stored as 03:30 and stays
+    there for good.
+    """
+    local_wall = instant.astimezone(local_timezone()).replace(tzinfo=None)
+    if literal is None:
+        return local_wall
+    return datetime.combine(local_wall.date(), literal.time())
+
+
+def _literal_wall_clock(when: str | datetime) -> datetime | None:
+    """The naive wall clock an input named, or None when it named an instant.
+
+    A duration (`2h`) and a timestamp carrying an offset or a `Z` both name an instant, so
+    neither has a wall clock of its own to preserve; the local one stands in for both.
+    """
+    if isinstance(when, datetime):
+        return when.replace(tzinfo=None) if when.tzinfo is None else None
+    if not isinstance(when, str):
+        return None
+    text = when.strip()
+    if not text or _DURATION_RE.match(text):
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed.replace(tzinfo=None) if parsed.tzinfo is None else None
+
+
+def _anchor_wall(anchor_utc: datetime, anchor_local: str | datetime | None) -> datetime:
+    """The wall clock a schedule is laid out on, falling back to the anchor instant."""
+    if isinstance(anchor_local, datetime):
+        return anchor_local.replace(tzinfo=None)
+    if anchor_local:
+        try:
+            parsed = datetime.fromisoformat(str(anchor_local).strip())
+            if parsed.tzinfo is None:
+                return parsed
+        except ValueError:
+            pass
+    return anchor_utc.astimezone(local_timezone())
+
+
+def _allowed_days(rule: str) -> frozenset[int]:
+    """The weekdays a day-of-week pattern accepts.
+
+    `weekday`, `weekend` and a day list are the only rules that name a set of weekdays, so
+    anything else reaching here is a bug in this module rather than a rule to interpret.
+    """
+    if rule == "weekday":
+        return _WEEKDAY_DAYS
+    if rule == "weekend":
+        return _WEEKEND_DAYS
+    days = frozenset(
+        _WEEKDAY_ALIASES[token] for token in rule.split(",") if token in _WEEKDAY_ALIASES
+    )
+    if not days:
+        raise ValueError(f"not a weekday pattern: {rule!r}")
+    return days
+
+
+def _day_matches(rule: str, day: date, anchor_wall: datetime) -> bool:
+    """Does `rule` name this date?"""
+    if rule == "day":
+        return True
+    if rule == "week":
+        return (day - anchor_wall.date()).days % 7 == 0
+    return day.weekday() in _allowed_days(rule)
+
+
 def next_due(
     anchor: datetime,
     every: str,
     *,
     after: datetime,
-    anchor_local: str | None = None,
+    anchor_local: str | datetime | None = None,
 ) -> datetime:
     """Next occurrence strictly after `after`, anchored to `anchor` so schedules never drift."""
     rule = parse_every(every)
@@ -195,18 +305,8 @@ def next_due(
             candidate = anchor_utc + timedelta(seconds=steps * step)
         return candidate.astimezone(timezone.utc)
 
-    tz = local_timezone()
-    anchor_wall = None
-    if anchor_local:
-        try:
-            parsed_wall = datetime.fromisoformat(str(anchor_local).strip())
-            if parsed_wall.tzinfo is None:
-                anchor_wall = parsed_wall
-        except ValueError:
-            pass
-    if anchor_wall is None:
-        anchor_wall = anchor_utc.astimezone(tz)
-    cutoff_local = cutoff_utc.astimezone(tz)
+    anchor_wall = _anchor_wall(anchor_utc, anchor_local)
+    cutoff_local = cutoff_utc.astimezone(local_timezone())
     hh, mm, ss = anchor_wall.hour, anchor_wall.minute, anchor_wall.second
 
     if rule == "month":
@@ -222,24 +322,45 @@ def next_due(
                 month += 1
         raise ValueError(f"could not advance monthly reminder from {anchor_utc.isoformat()}")
 
-    allowed_days = (
-        {_WEEKDAY_ALIASES[part] for part in rule.split(",")}
-        if rule not in ("day", "weekday", "week")
-        else None
-    )
     start_date = cutoff_local.date()
-    for offset in range(15):
+    for offset in range(_CALENDAR_LOOKAHEAD_DAYS):
         day_date = start_date + timedelta(days=offset)
-        if rule == "weekday" and day_date.weekday() >= 5:
-            continue
-        if rule == "week" and (day_date - anchor_wall.date()).days % 7 != 0:
-            continue
-        if allowed_days is not None and day_date.weekday() not in allowed_days:
+        if not _day_matches(rule, day_date, anchor_wall):
             continue
         cand = _local_wall_to_utc(day_date.year, day_date.month, day_date.day, hh, mm, ss)
         if cand > cutoff_utc:
             return cand
     raise ValueError(f"could not advance {rule!r} reminder from {anchor_utc.isoformat()}")
+
+
+def first_occurrence(
+    anchor: datetime,
+    every: str,
+    *,
+    anchor_local: str | datetime | None = None,
+) -> datetime:
+    """The first occurrence of a pattern at or after `anchor`.
+
+    Only the day-of-week patterns can move the anchor: a duration, `day`, `week` and `month`
+    rule already begins on the instant it was asked for. Asked for a Saturday with `weekday`,
+    the first delivery is the Monday; asked for a day the rule already names, it stays exactly
+    where it was.
+    """
+    rule = parse_every(every)
+    anchor_utc = anchor.astimezone(timezone.utc)
+    if rule in _UNCONSTRAINED_RULES or _DURATION_RE.match(rule):
+        return anchor_utc
+    wall = _anchor_wall(anchor_utc, anchor_local)
+    for offset in range(_CALENDAR_LOOKAHEAD_DAYS):
+        day_date = wall.date() + timedelta(days=offset)
+        if not _day_matches(rule, day_date, wall):
+            continue
+        cand = _local_wall_to_utc(
+            day_date.year, day_date.month, day_date.day, wall.hour, wall.minute, wall.second
+        )
+        if cand >= anchor_utc:
+            return cand
+    raise ValueError(f"could not find a first {rule!r} occurrence from {anchor_utc.isoformat()}")
 
 
 
@@ -313,12 +434,15 @@ class ReminderStore:
         if not isinstance(due, datetime):
             raise StoreError(f"cannot read {when!r} as a time")
         recurrence = parse_every(every) if (every and str(every).strip()) else None
+        anchor_local_iso = None
+        if recurrence:
+            # A day-of-week pattern decides which day the first delivery lands on: asked for a
+            # Saturday with `weekday`, it starts on the Monday. The clock time is the one that
+            # was asked for, and the anchor keeps the date the schedule landed on.
+            wall = _wall_clock(due, _literal_wall_clock(when))
+            due = first_occurrence(due, recurrence, anchor_local=wall)
+            anchor_local_iso = _wall_clock(due, wall).isoformat(timespec="seconds")
         due_iso = to_iso(due)
-        anchor_local_iso = (
-            due.astimezone(local_timezone()).replace(tzinfo=None).isoformat(timespec="seconds")
-            if recurrence
-            else None
-        )
         record = {
             "id": uuid.uuid4().hex[:8],
             "text": text,
@@ -430,16 +554,32 @@ class ReminderStore:
                 removed = records.pop(index)
                 self._write(data)
                 return removed
-            current_due = parse_when(record["due_at"])
-            anchor = parse_when(record.get("anchor_at") or record["due_at"])
-            anchor_local = record.get("anchor_local")
-            cutoff = max(current, current_due)
-            record["due_at"] = to_iso(
-                next_due(anchor, str(every), after=cutoff, anchor_local=anchor_local)
-            )
+            try:
+                current_due = parse_when(record["due_at"])
+                anchor = parse_when(record.get("anchor_at") or record["due_at"])
+                cutoff = max(current, current_due)
+                record["due_at"] = to_iso(
+                    next_due(
+                        anchor,
+                        str(every),
+                        after=cutoff,
+                        anchor_local=record.get("anchor_local"),
+                    )
+                )
+            except (ValueError, KeyError, TypeError) as exc:
+                # The message is already on the wire by the time the rule is advanced, so a
+                # rule this build cannot read has to retire the reminder. Leaving it pending
+                # would put the same sentence on the user's screen every minute, and the rule
+                # cannot start working on a later tick.
+                record["status"] = "failed"
+                record["last_error"] = f"cannot advance a repeating reminder: {exc}"
+                record["next_attempt_at"] = None
+                self._write(data)
+                return dict(record)
+            # Both anchors are immutable and written back unchanged: `next_due` counted every
+            # slot from `anchor_at`, and `anchor_local` is the wall clock the schedule was set
+            # up on. Rewriting either from the advanced slot is how a schedule starts to drift.
             record["anchor_at"] = to_iso(anchor)
-            if anchor_local:
-                record["anchor_local"] = anchor_local
             record["status"] = "pending"
             record["attempts"] = 0
             record["last_error"] = None

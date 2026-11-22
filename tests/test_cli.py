@@ -66,7 +66,10 @@ class CliTests(unittest.TestCase):
         _, json_out, _ = self.run_cli(["list", "--json"])
         records = json.loads(json_out)
         self.assertEqual(records[0]["every"], "weekday")
-        self.assertEqual(records[0]["anchor_at"], "2026-11-01T09:00:00Z")
+        # 2026-11-01 is a Sunday and a weekday rule cannot start on a weekend day, so the first
+        # delivery is Monday 2026-11-02 and that is what the schedule is counted from.
+        self.assertEqual(records[0]["due_at"], "2026-11-02T09:00:00Z")
+        self.assertEqual(records[0]["anchor_at"], "2026-11-02T09:00:00Z")
 
 
     def test_add_without_a_time_is_refused(self):

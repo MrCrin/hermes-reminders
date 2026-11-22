@@ -70,6 +70,9 @@ class ParseEveryTests(unittest.TestCase):
             "daily": "day",
             "weekday": "weekday",
             "weekdays": "weekday",
+            "weekend": "weekend",
+            "weekends": "weekend",
+            "Weekend": "weekend",
             "week": "week",
             "weekly": "week",
             "month": "month",
@@ -83,10 +86,77 @@ class ParseEveryTests(unittest.TestCase):
                 self.assertEqual(store.parse_every(raw), expected)
 
     def test_invalid_recurrence_is_rejected(self):
-        for bad in ("", "   ", "0s", "0h", "yearly", "mon,funday"):
+        for bad in ("", "   ", "0s", "0h", "yearly", "mon,funday",
+                    "mon and wed", "every monday", "2w", "fortnight"):
             with self.subTest(bad=bad):
                 with self.assertRaises(ValueError):
                     store.parse_every(bad)
+
+    def test_a_recurrence_rule_that_is_not_a_string_is_rejected(self):
+        # A tool call can carry any JSON type. It must come back as a readable refusal
+        # rather than an AttributeError from deep inside the parser.
+        for bad in (["mon"], {"mon": 1}, 7, ["mon", "wed"]):
+            with self.subTest(bad=bad):
+                with self.assertRaises(ValueError):
+                    store.parse_every(bad)
+
+
+class CalendarWalkTests(unittest.TestCase):
+    """Which dates a pattern accepts, and where its walk starts."""
+
+    def setUp(self):
+        self._sandbox = sandbox(with_hermes=False)
+        self.env = self._sandbox.__enter__()
+        self.addCleanup(lambda: self._sandbox.__exit__(None, None, None))
+
+    def test_a_weekend_rule_advances_over_the_week_to_saturday(self):
+        # 2026-11-04 is a Wednesday.
+        wednesday = datetime(2026, 11, 4, 9, 0, tzinfo=timezone.utc)
+        self.assertEqual(
+            store.next_due(wednesday, "weekend", after=wednesday),
+            datetime(2026, 11, 7, 9, 0, tzinfo=timezone.utc),
+        )
+
+    def test_a_weekend_rule_rolls_from_sunday_to_saturday(self):
+        # 2026-11-08 is a Sunday; the next weekend day is Saturday 2026-11-14.
+        sunday = datetime(2026, 11, 8, 9, 0, tzinfo=timezone.utc)
+        self.assertEqual(
+            store.next_due(sunday, "weekend", after=sunday),
+            datetime(2026, 11, 14, 9, 0, tzinfo=timezone.utc),
+        )
+
+    def test_every_rule_finds_its_next_slot_from_any_day_of_the_week(self):
+        # The walk's window is the thing that can be too small. A single-weekday rule whose
+        # slot has already passed today is only reachable a week later, so the window has to
+        # span a full cycle plus the day it starts on.
+        rules = ("day", "weekday", "weekend", "week", "mon", "sun", "mon,wed,fri")
+        for day in range(7):
+            anchor = datetime(2026, 11, 2, 9, 0, tzinfo=timezone.utc) + timedelta(days=day)
+            after = anchor + timedelta(hours=2)  # today's 09:00 slot has gone
+            for rule in rules:
+                with self.subTest(day=day, rule=rule):
+                    got = store.next_due(anchor, rule, after=after)
+                    self.assertGreater(got, after)
+                    self.assertLessEqual(got - after, timedelta(days=7))
+
+    def test_the_first_occurrence_is_the_next_matching_day(self):
+        # Saturday 2026-11-07: a weekday pattern cannot start on the day it was asked for.
+        saturday = datetime(2026, 11, 7, 9, 0, tzinfo=timezone.utc)
+        self.assertEqual(
+            store.first_occurrence(saturday, "weekday"),
+            datetime(2026, 11, 9, 9, 0, tzinfo=timezone.utc),
+        )
+        self.assertEqual(
+            store.first_occurrence(saturday, "mon,wed,fri"),
+            datetime(2026, 11, 9, 9, 0, tzinfo=timezone.utc),
+        )
+
+    def test_the_first_occurrence_keeps_a_rule_that_already_matches(self):
+        # Monday 2026-11-02 09:00Z. None of these may be pushed to the next slot.
+        monday = datetime(2026, 11, 2, 9, 0, tzinfo=timezone.utc)
+        for rule in ("weekday", "mon", "mon,wed,fri", "day", "week", "month", "2h", "7d"):
+            with self.subTest(rule=rule):
+                self.assertEqual(store.first_occurrence(monday, rule), monday)
 
 
 
@@ -278,6 +348,62 @@ class PoolTests(unittest.TestCase):
             now=datetime(2026, 11, 12, 1, 0, 5, tzinfo=timezone.utc),
         )
         self.assertEqual(advanced["due_at"], "2026-11-12T19:00:00Z")
+
+    def test_a_repeating_reminder_starts_on_the_first_day_its_pattern_names(self):
+        # Asked for Saturday 2026-11-07 with a weekday pattern: the first delivery has to be
+        # the Monday, not the Saturday.
+        record = self.store.add("work log", "2026-11-07T09:00:00Z", every="weekday")
+        self.assertEqual(record["due_at"], "2026-11-09T09:00:00Z")
+        self.assertEqual(record["anchor_at"], "2026-11-09T09:00:00Z")
+
+    def test_a_weekend_rule_snaps_its_first_occurrence_the_same_way(self):
+        # Asked for Wednesday 2026-11-04 with a weekend pattern: first delivery is Saturday.
+        record = self.store.add("long run", "2026-11-04T09:00:00Z", every="weekend")
+        self.assertEqual(record["due_at"], "2026-11-07T09:00:00Z")
+
+    def test_a_day_list_rule_snaps_its_first_occurrence(self):
+        # Asked for Sunday 2026-11-08 with mon,wed,fri: first delivery is Monday.
+        record = self.store.add("gym", "2026-11-08T07:00:00Z", every="mon,wed,fri")
+        self.assertEqual(record["due_at"], "2026-11-09T07:00:00Z")
+
+    def test_a_first_occurrence_already_on_its_pattern_is_left_alone(self):
+        # Monday 2026-11-02 is a weekday, so the reminder must not be pushed a day forward.
+        record = self.store.add("standup", "2026-11-02T09:00:00Z", every="weekday")
+        self.assertEqual(record["due_at"], "2026-11-02T09:00:00Z")
+
+    def test_a_snap_keeps_the_time_of_day_it_was_asked_for(self):
+        record = self.store.add("work log", "2026-11-07T17:45:00Z", every="weekday")
+        self.assertEqual(record["anchor_local"], "2026-11-09T17:45:00")
+
+    def test_the_wall_clock_anchor_survives_a_daylight_saving_gap(self):
+        import os
+        import time
+
+        cfg = self.env["home"] / "config.yaml"
+        cfg.write_text("timezone: America/New_York\n", encoding="utf-8")
+        prev_tz = os.environ.get("TZ")
+        os.environ["TZ"] = "UTC"
+        time.tzset()
+        try:
+            # 02:30 does not exist on 2026-03-08 in New York: the clocks jump 02:00 to 03:00.
+            # The instant is the same one (07:30Z), but the wall clock has to stay 02:30, or
+            # every later delivery drifts to 03:30 for good.
+            record = self.store.add("night check", "2026-03-08T02:30:00", every="day")
+            self.assertEqual(record["due_at"], "2026-03-08T07:30:00Z")
+            self.assertEqual(record["anchor_local"], "2026-03-08T02:30:00")
+
+            advanced = self.store.mark_delivered(
+                record["id"],
+                now=datetime(2026, 3, 8, 7, 30, 5, tzinfo=timezone.utc),
+            )
+            # 2026-03-09 02:30 EDT (UTC-4), not 03:30.
+            self.assertEqual(advanced["due_at"], "2026-03-09T06:30:00Z")
+        finally:
+            if prev_tz is None:
+                os.environ.pop("TZ", None)
+            else:
+                os.environ["TZ"] = prev_tz
+            time.tzset()
 
 
 
