@@ -249,6 +249,12 @@ def handle_setup(args) -> int:
         store.set_default_target(args.target)
     if getattr(args, "template", None):
         store.set_template(args.template)
+    if getattr(args, "max_attempts", None) is not None:
+        try:
+            store.set_max_attempts(args.max_attempts)
+        except StoreError as exc:
+            print(f"reminders: {exc}", file=sys.stderr)
+            return 1
     print(f"store: {store.path}")
     print(f"stub:  {write_stub()}")
 
@@ -289,6 +295,7 @@ def handle_status(args) -> int:
     print(f"store:          {store.path}{'' if store.path.exists() else '  (not created yet)'}")
     print(f"default target: {store.default_target() or '— (set one with `hermes reminders setup --target <platform>`)'}")
     print(f"template:       {store.template() or 'default (🔔 {text} / (Reminder set on {created}))'}")
+    print(f"retry limit:    {store.max_attempts()}")
     print(f"reminders:      {len(pending)} pending, {len(failed)} failed")
     print(f"stub:           {stub}{'' if stub.exists() else '  (missing — run `hermes reminders setup`)'}")
     print(f"cron job:       {job.get('id') if job else 'not installed'}")
@@ -333,6 +340,13 @@ def setup_parser(parser) -> None:
         "--template",
         help="Set the delivery format, e.g. '🔔 {text}\\n(Reminder set on {created})'. "
              "Placeholders: {text} {created} {created_utc} {due} {due_utc} {id}",
+    )
+    setup.add_argument(
+        "--max-attempts",
+        type=int,
+        metavar="N",
+        help="Set how many times a failed delivery is retried before the reminder is marked "
+             "failed; the default is 10",
     )
     setup.add_argument("--no-cron", action="store_true", help="Write the stub only; print the job command")
 

@@ -72,6 +72,22 @@ class CliTests(unittest.TestCase):
         self.assertEqual(records[0]["anchor_at"], "2026-11-02T09:00:00Z")
 
 
+    def test_setup_can_set_the_retry_limit(self):
+        code, _, err = self.run_cli(["setup", "--max-attempts", "3", "--no-cron"])
+        self.assertEqual(code, 0, err)
+        self.assertEqual(self.store.max_attempts(), 3)
+
+    def test_setup_refuses_an_unusable_retry_limit(self):
+        code, _, err = self.run_cli(["setup", "--max-attempts", "0", "--no-cron"])
+        self.assertEqual(code, 1)
+        self.assertIn("retry limit", err)
+
+    def test_status_reports_the_retry_limit(self):
+        self.run_cli(["setup", "--max-attempts", "4", "--no-cron"])
+        code, out, _ = self.run_cli(["status"])
+        self.assertEqual(code, 0)
+        self.assertRegex(out, r"retry limit:\s+4\b")
+
     def test_add_without_a_time_is_refused(self):
         code, _, err = self.run_cli(["add", "no time given"])
         self.assertEqual(code, 2)
