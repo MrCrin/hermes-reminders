@@ -23,6 +23,11 @@ All notable changes to this project are documented here. The format follows
 - The phrases these rules are usually written as are read as the rules themselves: `every other
   week`, `biweekly`, `fortnightly`, `every second tuesday`, `the first monday of the month`, and
   `every <rule>` in general, so `every monday` is `mon` and `every 2 weeks` is `2w`.
+- The retry limit is a pool setting: `hermes reminders setup --max-attempts N` sets how many
+  times a failed delivery is retried before the reminder is marked `failed`, and
+  `hermes reminders status` reports it. It sits beside `default_target` and `template` in the
+  pool file, and an unusable value there is treated as absent rather than obeyed, so a typo
+  cannot cost a reminder.
 
 ### Changed
 

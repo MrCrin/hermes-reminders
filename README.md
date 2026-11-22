@@ -174,7 +174,7 @@ reasoning, including the retry and pruning rules, is in [docs/design.md](docs/de
 | Default delivery target | `hermes reminders setup --target telegram` (per reminder: `--target`) |
 | Delivery format | `hermes reminders setup --template "…"` — default is `🔔 {text}` / `(Reminder set on {created})` |
 | Store location | `$HERMES_HOME/reminders.json`; override with `REMINDERS_STORE` |
-| Retry limit per reminder | `"max_attempts"` in the store file (default 10) |
+| Retry attempts per reminder | `hermes reminders setup --max-attempts 3`; the default is 10 |
 | Poller chattiness | `REMINDERS_VERBOSE=1` makes an empty pass print a summary instead of staying silent |
 
 ## What this does on your machine
