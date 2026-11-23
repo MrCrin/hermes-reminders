@@ -58,6 +58,9 @@ environment. Consequences that matter:
    10. An absent or unusable value means the built-in default, so a typo in the file cannot cost
    a reminder.
 
+   The file also carries a `version` field (the schema version, currently 1), so a change to the
+   on-disk format can migrate an existing pool rather than break it.
+
    A recurring record carries two anchors, and they answer different questions. `anchor_at` is
    the instant every slot is counted from and is never rewritten, so a schedule cannot drift.
    `anchor_local` is what the next slot is laid out on, so "every day at 19:00" stays at 19:00
