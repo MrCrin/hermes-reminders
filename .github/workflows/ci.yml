@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  tests:
+    name: tests (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        # 3.11 is the declared floor, 3.14 the newest supported.
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
+        include:
+          # The plugin claims macOS support, so one job proves it there.
+          - os: macos-latest
+            python-version: "3.12"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Run the test suite
+        run: python3 -m unittest discover -s tests -t tests
+
+  plugin:
+    name: plugin checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Hermes has to be installed from the installer rather than from PyPI: the
+      # published package lags well behind the version this plugin requires, and
+      # installing it would fail the requires_hermes floor for the wrong reason.
+      - name: Install Hermes
+        run: curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash -s -- --non-interactive
+
+      - name: Add the Hermes launcher to PATH
+        run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Check that the plugin loads and registers what it claims
+        run: hermes plugins doctor . --ci
+
+      # The same check the catalogue runs on the pinned commit at admission.
+      # `--install-deps` is what CI passes there; this plugin declares no
+      # dependencies, so it only proves that stays true.
+      - name: Run the catalogue admission check
+        run: hermes plugins validate . --install-deps
