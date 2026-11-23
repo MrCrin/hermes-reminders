@@ -1,0 +1,30 @@
+# Catalogue entry for the Hermes plugin catalogue.
+#
+# This file is not read by the plugin. It is the submission artifact: the copy
+# that gets added to NousResearch/hermes-agent at plugin-catalog/reminders.yaml
+# by pull request. See README.md in this directory for the procedure.
+#
+# `sha` must be a full 40-character commit, and it must be a commit that already
+# exists on the public repository. Recompute it after the last commit of the
+# release being submitted, never before.
+
+name: reminders
+repo: https://github.com/MrCrin/hermes-reminders
+sha: 36ceb6f1d12ce25e9f10df194be8b4fe92768048
+description: "A reminder pool for Hermes Agent: one tool call to set a reminder, one cron poller to deliver it, and no model in the delivery path."
+maintainer: Michael Crinnion
+tier: community
+category: automation
+requires_hermes: ">=0.22.0"
+version: "0.3.0"
+docs_url: https://github.com/MrCrin/hermes-reminders#readme
+platforms: [linux, macos]
+title: Reminders
+capabilities:
+  provides_tools:
+    - reminders_add
+    - reminders_list
+    - reminders_cancel
+  provides_hooks: []
+  provides_middleware: []
+  requires_env: []
