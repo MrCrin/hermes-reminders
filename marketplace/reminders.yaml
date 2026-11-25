@@ -11,14 +11,13 @@
 name: reminders
 repo: https://github.com/MrCrin/hermes-reminders
 sha: 36ceb6f1d12ce25e9f10df194be8b4fe92768048
-description: "A reminder pool for Hermes Agent: one tool call to set a reminder, one cron poller to deliver it, and no model in the delivery path."
+description: "A simple reminder plugin that won't clutter your cron."
 maintainer: Michael Crinnion
 tier: community
 category: automation
 requires_hermes: ">=0.22.0"
 version: "0.3.0"
 docs_url: https://github.com/MrCrin/hermes-reminders#readme
-platforms: [linux, macos]
 title: Reminders
 capabilities:
   provides_tools:

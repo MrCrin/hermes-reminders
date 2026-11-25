@@ -42,20 +42,11 @@ so it changes nothing here.
 
 ## The pull request description
 
-The catalogue asks for three things beyond the file itself, and admission rule 13 requires the
-risky behaviour to be disclosed. For this plugin that means:
+The catalogue asks for three things beyond the file itself, and admission rule 13 requires the risky behaviour to be disclosed. For this plugin that means:
 
-- **What it does.** A reminder pool: one tool call sets a reminder, one cron job delivers it,
-  and no model is involved in delivery.
-- **Which Hermes surfaces it uses.** Three tools in a `reminders` toolset (`reminders_add`,
-  `reminders_list`, `reminders_cancel`), the `reminders` CLI subcommand, the `/reminders` slash
-  command, and a bundled read-only skill, `reminders:using`.
-- **Disclosure.** It reads and writes `$HERMES_HOME/reminders.json` and a lock file beside it.
-  It writes a stub into `$HERMES_HOME/scripts/`. It creates one cron job, after reading
-  `$HERMES_HOME/cron/jobs.json` read-only so it never creates a duplicate, and marks that job's
-  completion notifications off through the scheduler's own store API. It runs the `hermes` CLI
-  as a subprocess. It makes no network calls of its own, sends no telemetry, and holds no
-  credentials. It runs on Linux and macOS only.
+- What it does. A reminder service: one tool call sets a reminder, one cron job delivers it, and no model is involved in delivery.
+- Which Hermes surfaces it uses. Three tools in a `reminders` toolset (`reminders_add`, `reminders_list`, `reminders_cancel`), the `reminders` CLI subcommand, the `/reminders` slash command, and a bundled read-only skill, `reminders:using`.
+- The disclosure. It reads and writes `$HERMES_HOME/reminders.json` and a lock file beside it. It writes a script into `$HERMES_HOME/scripts/`. It creates one cron job, after reading `$HERMES_HOME/cron/jobs.json` read-only so it never creates a duplicate, and marks that job's completion notifications off through the scheduler's own store API. It runs the `hermes` CLI as a subprocess. It makes no network calls of its own, sends no telemetry, and holds no credentials.
 
 The README's "What this does on your machine" section is the same list in the reader's words,
 and is the source of the disclosure paragraph.
