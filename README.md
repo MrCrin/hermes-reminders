@@ -12,7 +12,7 @@ A simple reminder plugin for [Hermes Agent](https://hermes-agent.nousresearch.co
 
 ## Install
 
-From the plugin catalogue*:
+From the plugin catalogue:
 
 ```bash
 hermes plugins install reminders
@@ -28,8 +28,6 @@ hermes plugins install MrCrin/hermes-reminders --ref <40-hex-sha> --yes-deps --e
 Requires Hermes 0.22.0 or newer, and a messaging platform that `hermes send --list` can reach.
 
 Pass `--enable` when updating as well. A running Hermes process keeps the plugin code it loaded at start, so without it the gateway and the `serve` backend carry on with the old version until they are reloaded or restarted.
-
-*Awaiting approval
 
 ## Quick start
 
