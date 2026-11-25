@@ -44,8 +44,9 @@ environment. Consequences that matter:
 ## Layers
 
 1. **Store** — one JSON file (`$HERMES_HOME/reminders.json` by default, overridable).
-   Atomic write (temp file + `os.replace`) under an advisory lock (`fcntl.flock`), so the
-   agent, the CLI and the poller can all touch it safely.
+   Atomic write (temp file + `os.replace`) under an advisory lock (`fcntl.flock`) where the
+   platform provides one, so the agent, the CLI and the poller can all touch it safely. Where
+   `fcntl` is absent the lock is skipped, which is why no platform subset is declared.
    Each record: `id`, `text`, `due_at` (UTC, absolute), `every` (optional recurrence rule),
    `anchor_at` (the immutable UTC instant the schedule is counted from), `anchor_local` (the
    wall clock that instant means to the reader — see below), `created_at`, `created_by`,
@@ -94,10 +95,10 @@ environment. Consequences that matter:
    slot that has already passed today is one cycle away. A multi-week cycle counts whole weeks
    from the anchor, so `2w:mon,wed` fires both days of one week and neither of the next.
 
-   A week of the month is refused at the fifth (`fifth:monday`), because a month holds at most
-   four of a weekday and the ones that hold five would silently skip. Anything the grammar cannot
-   express, `every other day` included, is refused rather than guessed at: a refusal costs one
-   retry, and a guess delivers the wrong reminder.
+   A week of the month is refused at the fifth (`fifth:monday`), because a fifth Monday exists in
+   some months and not others, so the rule would fire irregularly. `last:mon` is the final Monday
+   of every month. Anything the grammar cannot express, `every other day` included, is refused
+   rather than guessed at: a refusal costs one retry, and a guess delivers the wrong reminder.
 2. **Interfaces** —
    - agent tools: `reminders_add`, `reminders_list`, `reminders_cancel`;
    - slash command: `/reminders` (`/reminders [all | cancel <id>]`), executed directly without
