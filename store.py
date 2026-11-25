@@ -94,8 +94,8 @@ _MONTH_LOOKAHEAD_MONTHS = 24
 # days of the week. A week here is a calendar week, not 604800 seconds, so the clock time is
 # held across the change of the clocks. A raw interval is spelled in days, as in `14d`.
 _WEEK_CYCLE_RE = re.compile(r"^(\d+)\s*(?:w|week|weeks|weekly)(?::\s*([a-z,\s]+))?$")
-# Which week of the month: `first:mon` and `last:fri`. A month has at most four of any
-# weekday, so the fifth is refused rather than silently skipping months.
+# Which week of the month: `first:mon` and `last:fri`. A fifth of a weekday exists in some
+# months and not others, so that rule would fire irregularly; it is refused rather than guessed.
 _ORDINAL_RE = re.compile(r"^(first|second|third|fourth|last|1st|2nd|3rd|4th|[1-4]):([a-z,\s]+)$")
 _ORDINAL_ALIASES = {
     "first": 1, "1st": 1, "1": 1,
@@ -285,8 +285,8 @@ def parse_every(value: str) -> str:
         return _CALENDAR_ALIASES[text]
     if text.startswith(_UNSUPPORTED_ORDINALS):
         raise ValueError(
-            "a month has at most four of a weekday, so a fifth is not a schedule to set; "
-            "use `last` for the final one"
+            "a fifth of a weekday exists in some months and not others, so that rule would "
+            "fire irregularly; use `last` for the final one of each month"
         )
     try:
         match = _WEEK_CYCLE_RE.match(text)
