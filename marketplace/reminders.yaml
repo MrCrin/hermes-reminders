@@ -10,7 +10,7 @@
 
 name: reminders
 repo: https://github.com/MrCrin/hermes-reminders
-sha: 36ceb6f1d12ce25e9f10df194be8b4fe92768048
+sha: c8139dd5797f6d0a132e564d68c181dc9bf32169
 description: "A simple reminder plugin that won't clutter your cron."
 maintainer: Michael Crinnion
 tier: community
