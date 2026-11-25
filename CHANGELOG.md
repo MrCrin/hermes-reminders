@@ -6,6 +6,19 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-25
+
+### Fixed
+
+- The message on an unsupported ordinal such as `fifth:mon` said a month has at most four of any
+  weekday, which is not true: a 31-day month that starts on a Monday holds five of three
+  weekdays. The refusal is unchanged, and only the reason given for it was wrong.
+
+### Removed
+
+- The declared platform subset in `plugin.yaml`. The store takes its lock only where `fcntl`
+  exists and skips it otherwise, so no platform needs to be excluded.
+
 ## [0.3.0] - 2026-11-22
 
 ### Added
@@ -106,6 +119,8 @@ All notable changes to this project are documented here. The format follows
   reports every finished job — a web UI toasting completions and counting them in its task badge —
   does not announce a silent poller 1,440 times a day.
 
-[Unreleased]: https://github.com/MrCrin/hermes-reminders/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/MrCrin/hermes-reminders/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/MrCrin/hermes-reminders/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/MrCrin/hermes-reminders/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/MrCrin/hermes-reminders/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/MrCrin/hermes-reminders/releases/tag/v0.1.0

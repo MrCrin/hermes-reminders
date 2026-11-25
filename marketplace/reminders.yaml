@@ -16,7 +16,7 @@ maintainer: Michael Crinnion
 tier: community
 category: automation
 requires_hermes: ">=0.22.0"
-version: "0.3.0"
+version: "0.3.1"
 docs_url: https://github.com/MrCrin/hermes-reminders#readme
 title: Reminders
 capabilities:
