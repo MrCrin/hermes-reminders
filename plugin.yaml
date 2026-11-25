@@ -4,7 +4,6 @@ description: "A simple reminder plugin that won't clutter your cron."
 author: Michael Crinnion
 license: MIT
 kind: backend
-platforms: [linux, macos]
 requires_hermes: ">=0.22.0"
 provides_tools:
   - reminders_add

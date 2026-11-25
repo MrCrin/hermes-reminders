@@ -53,7 +53,10 @@ class PackagingTests(unittest.TestCase):
         self.assertRegex(manifest, r"(?m)^name:\s*\S+")
         self.assertRegex(manifest, r"(?m)^kind:\s*backend\s*$")
         self.assertRegex(manifest, r"(?m)^requires_hermes:\s*\"[><=~^ ]*\d+\.\d+")
-        self.assertRegex(manifest, r"(?m)^platforms:\s*\[linux,\s*macos\]\s*$")
+        # No platform subset: the store's lock is optional (see
+        # test_lock_works_when_fcntl_is_absent in test_store), so nothing here
+        # justifies claiming one.
+        self.assertNotIn("platforms:", manifest)
 
 
 if __name__ == "__main__":
