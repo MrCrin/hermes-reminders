@@ -26,7 +26,7 @@ Recompute it after the last commit of the release being submitted, never before:
 git rev-parse main
 ```
 
-The committed value here is the `0.3.1` release commit. Update it in the same pull request that
+The committed value here is the `0.3.2` release commit. Update it in the same pull request that
 bumps `version`, so the label on the catalogue card matches the code.
 
 ## Before opening the pull request
