@@ -8,15 +8,13 @@ nothing here holds a credential.
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 from . import message, sender
 from .poller import run_once
-from .store import ReminderStore, StoreError, fcntl, hermes_home
+from .store import ReminderStore, StoreError, hermes_home
 
 STUB_NAME = "reminders-poller.py"
 JOB_NAME = "reminders-poller"
@@ -84,60 +82,6 @@ def write_stub() -> Path:
     path.write_text(STUB_TEMPLATE.format(plugin=PLUGIN_NAME), encoding="utf-8")
     path.chmod(0o755)
     return path
-
-
-# A surface that announces every finished job — the Hermes WebUI toasts completions and counts
-# them in its Tasks badge — would turn a silent once-a-minute poller into continuous noise. These
-# are ordinary per-job fields, so the plugin turns both off when it creates the job and any surface
-# (or the user, later) may change them.
-NOTICE_FIELDS = {"toast_notifications": False, "badge_notifications": False}
-
-
-def mute_completion_notices(job: dict | None) -> bool:
-    """Record this job in ``cron/jobs.json`` as one whose completions are not worth announcing.
-
-    Updates the scheduler's own JSON store atomically under ``cron/.jobs.lock`` without importing
-    private Hermes internals.
-    """
-    job_id = str((job or {}).get("id") or "")
-    if not job_id:
-        return False
-    jobs_path = hermes_home() / "cron" / "jobs.json"
-    if not jobs_path.exists():
-        return False
-    lock_path = jobs_path.parent / ".jobs.lock"
-    try:
-        with open(lock_path, "w", encoding="utf-8") as lock_handle:
-            if fcntl is not None:
-                fcntl.flock(lock_handle.fileno(), fcntl.LOCK_EX)
-            try:
-                data = json.loads(jobs_path.read_text(encoding="utf-8") or "{}")
-                records = data.get("jobs") if isinstance(data, dict) else data
-                items = records.values() if isinstance(records, dict) else (records if isinstance(records, list) else ())
-                matched = False
-                for entry in items:
-                    if isinstance(entry, dict) and str(entry.get("id") or "") == job_id:
-                        entry.update(NOTICE_FIELDS)
-                        matched = True
-                if not matched:
-                    return False
-                fd, temp_name = tempfile.mkstemp(dir=str(jobs_path.parent), prefix=".jobs-", suffix=".tmp")
-                try:
-                    with os.fdopen(fd, "w", encoding="utf-8") as handle:
-                        json.dump(data, handle, indent=2, ensure_ascii=False)
-                        handle.write("\n")
-                        handle.flush()
-                        os.fsync(handle.fileno())
-                    os.replace(temp_name, jobs_path)
-                finally:
-                    if os.path.exists(temp_name):
-                        os.unlink(temp_name)
-                return True
-            finally:
-                if fcntl is not None:
-                    fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
-    except (OSError, ValueError):
-        return False
 
 
 def cron_command() -> str:
@@ -269,8 +213,6 @@ def handle_setup(args) -> int:
     ok, detail = create_job()
     if ok:
         print(f"cron:  installed {detail or ''}".rstrip())
-        if mute_completion_notices(installed_job()):
-            print("cron:  completions muted — the job runs every minute and succeeds silently")
         return 0
     print(f"cron:  could not create the job automatically — {detail}", file=sys.stderr)
     print("Create it with:\n  " + cron_command(), file=sys.stderr)
@@ -299,8 +241,6 @@ def handle_status(args) -> int:
     print(f"reminders:      {len(pending)} pending, {len(failed)} failed")
     print(f"stub:           {stub}{'' if stub.exists() else '  (missing — run `hermes reminders setup`)'}")
     print(f"cron job:       {job.get('id') if job else 'not installed'}")
-    announcements = "muted" if job and job.get("toast_notifications") is False else "announced"
-    print(f"completions:    {announcements if job else '—'}")
     print(f"hermes send:    {executable or 'NOT FOUND'}")
     return 0
 

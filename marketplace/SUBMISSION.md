@@ -46,9 +46,9 @@ The catalogue asks for three things beyond the file itself, and admission rule 1
 
 - What it does. A reminder service: one tool call sets a reminder, one cron job delivers it, and no model is involved in delivery.
 - Which Hermes surfaces it uses. Three tools in a `reminders` toolset (`reminders_add`, `reminders_list`, `reminders_cancel`), the `reminders` CLI subcommand, the `/reminders` slash command, and a bundled read-only skill, `reminders:using`.
-- The disclosure. It reads and writes `$HERMES_HOME/reminders.json` and a lock file beside it. It writes a script into `$HERMES_HOME/scripts/`. It creates one cron job, after reading `$HERMES_HOME/cron/jobs.json` read-only so it never creates a duplicate, and marks that job's completion notifications off through the scheduler's own store API. It runs the `hermes` CLI as a subprocess. It makes no network calls of its own, sends no telemetry, and holds no credentials.
+- The disclosure. It reads and writes `$HERMES_HOME/reminders.json` and a lock file beside it. It writes a script into `$HERMES_HOME/scripts/`. It creates one cron job, after reading `$HERMES_HOME/cron/jobs.json` read-only so it never creates a duplicate, and it leaves that job's own settings alone. It runs the `hermes` CLI as a subprocess. It makes no network calls of its own, sends no telemetry, and holds no credentials.
 
-The README's "What this does on your machine" section is the same list in the reader's words,
+The README's "Files it writes and commands it runs" section is the same list in the reader's words,
 and is the source of the disclosure paragraph.
 
 ## After it is listed

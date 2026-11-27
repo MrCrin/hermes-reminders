@@ -169,6 +169,8 @@ shows the record and the reason.
 - Writes and reads one JSON file under `$HERMES_HOME` (the store).
 - Writes one small stub script into `$HERMES_HOME/scripts/`.
 - Creates **one** Hermes cron job, in no-agent mode; it never calls a model.
+- Leaves that job's own settings alone. A quiet pass prints nothing, but the job still completes
+  every minute, so a surface that announces cron completions announces this one.
 - Runs the `hermes` CLI as a subprocess (`send`) to deliver, and to create the job.
 - Makes no network calls of its own; no telemetry; no credentials of its own; touches no
   files outside `$HERMES_HOME`.

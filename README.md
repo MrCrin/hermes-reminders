@@ -141,8 +141,8 @@ Hermes runs cron scripts only from `$HERMES_HOME/scripts/`, so the plugin writes
 
 - reads and writes `$HERMES_HOME/reminders.json`, and a `.lock` file beside it;
 - writes `$HERMES_HOME/scripts/reminders-poller.py`;
-- creates one cron job (`reminders-poller`, every minute, no-agent mode), after reading `$HERMES_HOME/cron/jobs.json` first so that it does not create a second copy of it;
-- marks that job so its completions are not announced (`toast_notifications` and `badge_notifications` off), writing through the scheduler's own store API;
+- creates one cron job (`reminders-poller`, every minute, no-agent mode), after reading `$HERMES_HOME/cron/jobs.json` first so that it does not create a second copy of it. That file is read, never written;
+- leaves the job's own settings alone. A quiet pass prints nothing, but the job still finishes every minute, so a surface that announces cron completions will announce this one too. Switch that off for the job wherever the surface offers it: in the WebUI, the job's edit form carries `Completion toasts` and `Tasks badge` checkboxes;
 - runs the `hermes` CLI as a subprocess: `hermes send` to deliver, and `hermes cron create` during `setup`;
 - makes no network calls of its own, sends no telemetry, and holds no credentials of its own. Delivery credentials stay in Hermes' own configuration;
 - touches nothing outside `$HERMES_HOME`.

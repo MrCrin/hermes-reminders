@@ -10,7 +10,6 @@ import sys
 import types
 import unittest
 from pathlib import Path
-from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from support import cli, sandbox, store  # noqa: E402
@@ -144,34 +143,6 @@ class CliTests(unittest.TestCase):
         self.assertEqual(self.store.template(), "🔔 {text}")
         _, out, _ = self.run_cli(["status"])
         self.assertIn("🔔 {text}", out)
-
-    def test_setup_mutes_completion_notices_of_the_new_job(self):
-        cron_dir = self.env["home"] / "cron"
-
-        def fake_create():
-            cron_dir.mkdir(parents=True, exist_ok=True)
-            (cron_dir / "jobs.json").write_text(json.dumps(
-                {"jobs": [{"id": "abc123", "name": cli.JOB_NAME, "script": cli.STUB_NAME}]}
-            ))
-            return True, "abc123"
-
-        with mock.patch.object(cli, "create_job", fake_create), \
-                mock.patch.dict(sys.modules, {"cron": None, "cron.jobs": None}):
-            code, out, _ = self.run_cli(["setup"])
-        self.assertEqual(code, 0)
-        self.assertIn("completions muted", out)
-        saved = json.loads((cron_dir / "jobs.json").read_text())["jobs"][0]
-        self.assertIs(saved["toast_notifications"], False)
-        self.assertIs(saved["badge_notifications"], False)
-
-    def test_setup_survives_an_unwritable_or_missing_jobs_store(self):
-        def fake_create():
-            return True, "abc123"
-
-        with mock.patch.object(cli, "create_job", fake_create):
-            code, out, _ = self.run_cli(["setup"])
-        self.assertEqual(code, 0)
-        self.assertNotIn("completions muted", out)
 
     def test_status_reports_the_whole_chain(self):
         self.run_cli(["setup", "--no-cron"])
