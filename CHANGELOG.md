@@ -6,6 +6,23 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-11-27
+
+### Fixed
+
+- The store resolved the Hermes home from `$HERMES_HOME` alone. One Hermes process serving several
+  profiles carries only the launch profile in its environment, so a reminder set for another
+  profile was written into the launch profile's pool and delivered with its credentials. The home
+  now comes from Hermes itself wherever Hermes is importable; the environment is used only by the
+  standalone poller, which Hermes starts with the owning profile's home.
+- `hermes reminders setup` no longer writes the poller job's `toast_notifications` and
+  `badge_notifications` into `$HERMES_HOME/cron/jobs.json`. That file is Hermes' own, and the two
+  fields are a surface preference rather than plugin state. A fresh setup therefore shows
+  completion notices for the poller job until they are switched off in the job's own form; a job
+  that already exists keeps what it has.
+- The cron stub no longer adds `~/.hermes/plugins` to its import path, so a stub installed outside
+  the default home cannot import a plugin from an unrelated home.
+
 ## [0.3.1] - 2026-11-25
 
 ### Fixed
@@ -119,7 +136,8 @@ All notable changes to this project are documented here. The format follows
   reports every finished job — a web UI toasting completions and counting them in its task badge —
   does not announce a silent poller 1,440 times a day.
 
-[Unreleased]: https://github.com/MrCrin/hermes-reminders/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/MrCrin/hermes-reminders/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/MrCrin/hermes-reminders/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/MrCrin/hermes-reminders/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/MrCrin/hermes-reminders/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/MrCrin/hermes-reminders/compare/v0.1.0...v0.2.0
