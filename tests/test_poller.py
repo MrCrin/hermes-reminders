@@ -219,6 +219,29 @@ class StubEndToEndTests(unittest.TestCase):
             self.assertIn(cli.PLUGIN_NAME, text)
             self.assertIn("plugins", text)
 
+    def test_the_stub_never_reaches_into_an_unrelated_home(self):
+        # A `~/.hermes/plugins` that is not this home's own is somebody else's install, and a
+        # hardcoded default home can be another profile's. The stub resolves the plugin from the
+        # home it lives in, and from the root home above it when it runs for a profile, and from
+        # nowhere else.
+        with sandbox() as env:
+            user_home = env["root"] / "user-home"
+            foreign = user_home / ".hermes" / "plugins" / cli.PLUGIN_NAME
+            foreign.mkdir(parents=True)
+            marker = env["root"] / "foreign-plugin-imported"
+            (foreign / "poller.py").write_text(
+                "from pathlib import Path\n"
+                f"Path({str(marker)!r}).write_text('imported')\n"
+                "def main():\n    return 0\n",
+                encoding="utf-8",
+            )
+            stub = cli.write_stub()
+            subprocess.run(
+                [sys.executable, str(stub)], capture_output=True, text=True, timeout=60,
+                env=dict(os.environ, HOME=str(user_home)),
+            )
+            self.assertFalse(marker.exists(), "the stub imported a plugin from a foreign home")
+
     def test_the_stub_in_a_secondary_profile_finds_plugin_in_root_home(self):
         with sandbox() as env:
             root_home = env["home"]

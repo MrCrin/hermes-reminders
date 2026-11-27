@@ -57,7 +57,7 @@ from pathlib import Path
 
 _HOME = Path(__file__).resolve().parent.parent   # <HERMES_HOME>/scripts/<this file>
 os.environ.setdefault("HERMES_HOME", str(_HOME))
-for _candidate in (_HOME / "plugins", _HOME.parent.parent / "plugins", Path.home() / ".hermes" / "plugins"):
+for _candidate in (_HOME / "plugins", _HOME.parent.parent / "plugins"):
     if _candidate.is_dir():
         sys.path.append(str(_candidate))         # appended, so nothing here can shadow stdlib
 
