@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from support import sandbox, store  # noqa: E402
+from support import hermes_absent, hermes_reports_home, sandbox, store  # noqa: E402
 
 
 class ParseWhenTests(unittest.TestCase):
@@ -728,6 +728,44 @@ class PoolTests(unittest.TestCase):
         with mock.patch.object(store, "fcntl", None):
             record = self.store.add("no fcntl", "1h")
             self.assertEqual(self.store.get(record["id"])["text"], "no fcntl")
+
+
+class HermesHomeTests(unittest.TestCase):
+    """Which home the pool lives in: the profile the call belongs to, not the process's launch profile."""
+
+    def setUp(self):
+        self._sandbox = sandbox(with_hermes=False)
+        self.env = self._sandbox.__enter__()
+        self.addCleanup(lambda: self._sandbox.__exit__(None, None, None))
+
+    def test_the_pool_follows_the_profile_hermes_reports(self):
+        # One Hermes process can serve several profiles. HERMES_HOME then still names the launch
+        # profile, so taking the home from the environment alone would put this profile's
+        # reminders in another profile's pool and deliver them with its credentials.
+        launch = self.env["home"]
+        profile = launch / "profiles" / "work"
+        profile.mkdir(parents=True)
+        with hermes_absent():
+            self.assertEqual(store.hermes_home(), launch)
+        with hermes_reports_home(profile):
+            self.assertEqual(store.hermes_home(), profile)
+            self.assertEqual(store.store_path(), profile / store.DEFAULT_FILENAME)
+
+    def test_a_reminder_added_under_a_profile_home_lands_there(self):
+        launch = self.env["home"]
+        profile = launch / "profiles" / "work"
+        profile.mkdir(parents=True)
+        with hermes_reports_home(profile):
+            store.ReminderStore().add("book the room", "1h")
+        self.assertTrue((profile / store.DEFAULT_FILENAME).exists())
+        self.assertFalse((launch / store.DEFAULT_FILENAME).exists())
+
+    def test_the_environment_still_resolves_the_home_without_hermes(self):
+        # The cron stub runs as a plain subprocess with no Hermes to import. The scheduler hands
+        # it the owning profile's HERMES_HOME, and that is the answer.
+        with hermes_absent():
+            self.assertEqual(store.hermes_home(), self.env["home"])
+            self.assertEqual(store.store_path(), self.env["home"] / store.DEFAULT_FILENAME)
 
 
 if __name__ == "__main__":

@@ -13,8 +13,10 @@ import os
 import shutil
 import sys
 import tempfile
+import types
 from contextlib import contextmanager
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT.parent) not in sys.path:
@@ -85,3 +87,24 @@ def stage_plugin(home: Path) -> Path:
         ignore=shutil.ignore_patterns("__pycache__", ".git", "*.pyc", "tests"),
     )
     return target
+
+
+@contextmanager
+def hermes_reports_home(home: Path):
+    """Stand in for ``hermes_constants.get_hermes_home()`` answering *home*.
+
+    The real module ships inside a Hermes install and is deliberately not a test dependency, so
+    this installs a module carrying the one function the plugin calls. In a live process that
+    function resolves the profile the current call belongs to before it looks at ``HERMES_HOME``.
+    """
+    module = types.ModuleType("hermes_constants")
+    setattr(module, "get_hermes_home", lambda: Path(home))
+    with mock.patch.dict(sys.modules, {"hermes_constants": module}):
+        yield
+
+
+@contextmanager
+def hermes_absent():
+    """Make ``hermes_constants`` unimportable, the way it is for the standalone cron stub."""
+    with mock.patch.dict(sys.modules, {"hermes_constants": None}):
+        yield

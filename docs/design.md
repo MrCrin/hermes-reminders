@@ -44,6 +44,9 @@ environment. Consequences that matter:
 ## Layers
 
 1. **Store** — one JSON file (`$HERMES_HOME/reminders.json` by default, overridable).
+   The home is the one Hermes is operating on: `hermes_constants.get_hermes_home()` resolves the
+   profile the current call belongs to before it looks at `HERMES_HOME`, and the environment is
+   used only where Hermes cannot be imported, which is the standalone poller's case.
    Atomic write (temp file + `os.replace`) under an advisory lock (`fcntl.flock`) where the
    platform provides one, so the agent, the CLI and the poller can all touch it safely. Where
    `fcntl` is absent the lock is skipped, which is why no platform subset is declared.

@@ -118,6 +118,8 @@ The time of day is stored as a local time, so a daily 19:00 reminder stays at 19
 
 The template can use `{text}`, `{created}`, `{created_utc}`, `{due}`, `{due_utc}` and `{id}`, with `{created}` and `{due}` in the local time of the machine running the poller. A template with a mistake in it falls back to the default rather than losing the reminder.
 
+The home is the one Hermes is operating on: the plugin asks Hermes for it, so a reminder set while a profile is active belongs to that profile. The poller runs as a plain subprocess with no Hermes to ask, so it uses the home it was installed into.
+
 ## How it works
 
 ```

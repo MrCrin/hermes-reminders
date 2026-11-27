@@ -121,8 +121,31 @@ class StoreError(Exception):
     """The store could not be read or written."""
 
 
+def core_hermes_home() -> Path | None:
+    """The home Hermes itself is operating on, or ``None`` when Hermes is not importable.
+
+    ``None`` is the standalone case: the cron stub runs as a plain subprocess, with no Hermes on
+    its import path.
+    """
+    try:
+        from hermes_constants import get_hermes_home
+    except ImportError:
+        return None
+    return Path(get_hermes_home())
+
+
 def hermes_home() -> Path:
-    """The active Hermes home (profile-aware) without importing Hermes."""
+    """The active Hermes home (profile-aware).
+
+    Hermes is the authority whenever it can be imported: ``get_hermes_home()`` resolves the
+    profile the current call belongs to before it looks at ``HERMES_HOME``, and one process
+    serving several profiles has only the launch profile in its environment. The environment is
+    the fallback for the standalone cron stub, which Hermes starts with the owning profile's
+    ``HERMES_HOME`` already set.
+    """
+    core_home = core_hermes_home()
+    if core_home is not None:
+        return core_home
     return Path(os.environ.get(HOME_ENV) or Path.home() / ".hermes").expanduser()
 
 
